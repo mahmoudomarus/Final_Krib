@@ -1,0 +1,41 @@
+{
+  "name": "UAE Rental Platform",
+  "description": "Comprehensive Airbnb-style rental platform for UAE market",
+  "repository": "https://github.com/YOUR_USERNAME/uae-rental-platform",
+  "logo": "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=200",
+  "keywords": ["nodejs", "react", "rental", "uae", "airbnb"],
+  "success_url": "/",
+  "env": {
+    "NODE_ENV": {
+      "description": "Node environment",
+      "value": "production"
+    },
+    "JWT_SECRET": {
+      "description": "Secret key for JWT tokens",
+      "generator": "secret"
+    },
+    "CLIENT_URL": {
+      "description": "Frontend URL",
+      "value": "https://your-app-name.herokuapp.com"
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "free"
+    }
+  },
+  "addons": [
+    {
+      "plan": "heroku-postgresql:hobby-dev"
+    }
+  ],
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
+  "scripts": {
+    "postdeploy": "cd server && npx prisma migrate deploy && npm run db:seed"
+  }
+} 

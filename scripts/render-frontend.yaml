@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: uae-rental-frontend
+    env: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./build
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: "18"
+      - key: REACT_APP_API_URL
+        value: https://protected-sierra-25310-6656e0f5a79c.herokuapp.com/api
+      - key: GENERATE_SOURCEMAP
+        value: "false"
+      - key: CI
+        value: "false" 

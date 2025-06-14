@@ -1,0 +1,6 @@
+/* Custom App Styles */
+.App {
+  text-align: center;
+}
+
+/* Remove default React logo animation styles since we have custom logo */
