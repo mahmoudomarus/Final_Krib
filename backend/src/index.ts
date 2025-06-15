@@ -46,7 +46,8 @@ const io = new Server(httpServer, {
     origin: [
       'http://localhost:3000',
       'http://localhost:3001',
-      process.env.CLIENT_URL || 'http://localhost:3001'
+      process.env.CLIENT_URL || 'http://localhost:3001',
+      /^https:\/\/final-krib-frontend-.*\.vercel\.app$/
     ],
     credentials: true,
     methods: ['GET', 'POST'],
@@ -71,7 +72,8 @@ app.use(cors({
   origin: [
     'http://localhost:3000',
     'http://localhost:3001', 
-    process.env.CLIENT_URL || 'http://localhost:3001'
+    process.env.CLIENT_URL || 'http://localhost:3001',
+    /^https:\/\/final-krib-frontend-.*\.vercel\.app$/
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
