@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { supabaseAdmin } from '../lib/supabase';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 // GET /api/host/payouts - Get host payout information
 router.get('/payouts', authMiddleware, async (req: AuthenticatedRequest, res) => {

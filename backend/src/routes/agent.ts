@@ -3,7 +3,7 @@ import { authMiddleware, AuthenticatedRequest, requireAgent } from '../middlewar
 import { supabase } from '../lib/supabase';
 import Stripe from 'stripe';
 
-const router = express.Router();
+const router: express.Router = express.Router();
 
 // Initialize Stripe
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {

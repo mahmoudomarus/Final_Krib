@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireAdmin, authMiddleware, AuthenticatedRequest } from '../middleware/auth';
 import { supabaseAdmin } from '../lib/supabase';
 
-const router = Router();
+const router: Router = Router();
 
 // Get all notifications for a user
 router.get('/', authMiddleware, async (req: AuthenticatedRequest, res) => {

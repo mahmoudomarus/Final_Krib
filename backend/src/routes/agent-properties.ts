@@ -2,7 +2,7 @@ import express from 'express';
 import { authMiddleware, AuthenticatedRequest, requireAgent } from '../middleware/auth';
 import { supabase } from '../lib/supabase';
 
-const router = express.Router();
+const router: express.Router = express.Router();
 
 // Get agent's properties/listings
 router.get('/properties', authMiddleware, requireAgent, async (req: AuthenticatedRequest, res) => {

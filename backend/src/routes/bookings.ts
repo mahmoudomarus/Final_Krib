@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../lib/supabase';
 import { z } from 'zod';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 // Validation schemas
 const createBookingSchema = z.object({

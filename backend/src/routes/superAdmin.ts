@@ -2,7 +2,7 @@ import express from 'express';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
 import { createClient } from '@supabase/supabase-js';
 
-const router = express.Router();
+const router: express.Router = express.Router();
 
 // Create fresh Supabase admin client
 const supabaseAdmin = createClient(

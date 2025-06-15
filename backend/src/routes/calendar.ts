@@ -2,7 +2,7 @@ import { Router, Response } from 'express';
 import { supabaseAdmin } from '../lib/supabase';
 import { authMiddleware, AuthenticatedRequest, requireHost } from '../middleware/auth';
 
-const router = Router();
+const router: Router = Router();
 
 // Get calendar data for a property
 router.get('/property/:propertyId', authMiddleware, requireHost, async (req: AuthenticatedRequest, res: Response) => {

@@ -12,7 +12,7 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
-const router = Router();
+const router: Router = Router();
 const analyticsService = new AnalyticsService();
 
 // Get dashboard metrics (admin only)

@@ -3,7 +3,7 @@ import { authMiddleware, AuthenticatedRequest, requireAgent } from '../middlewar
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { NotificationService } from '../services/NotificationService';
 
-const router = express.Router();
+const router: express.Router = express.Router();
 const notificationService = new NotificationService();
 
 // Track property view

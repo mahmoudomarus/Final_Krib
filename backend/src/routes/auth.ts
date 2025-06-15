@@ -6,7 +6,7 @@ import { supabaseAdmin } from '../lib/supabase';
 import { authMiddleware } from '../middleware/auth';
 import { OAuth2Client } from 'google-auth-library';
 
-const router = Router();
+const router: Router = Router();
 
 // Google OAuth Client
 const googleClient = new OAuth2Client(
