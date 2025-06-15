@@ -670,7 +670,7 @@ const PropertiesManagement: React.FC = () => {
                               ) : (
                                 <div className="h-12 w-12 rounded-lg bg-gray-300 flex items-center justify-center">
                                   <Building className="w-6 h-6 text-gray-500" />
-                                </div>
+            </div>
                               )}
                             </div>
                             <div className="ml-4">

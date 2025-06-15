@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 // Search state interface
@@ -30,6 +30,7 @@ interface SearchUIState {
   showDurationDropdown: boolean;
   showFilters: boolean;
   activeField: string;
+  isExpanded: boolean; // For compact search bar expansion
 }
 
 // Context interface
@@ -43,6 +44,8 @@ interface SearchContextType {
   handleSearch: () => void;
   resetSearch: () => void;
   closeAllDropdowns: () => void;
+  expandSearch: () => void;
+  collapseSearch: () => void;
 }
 
 // Create context
@@ -75,13 +78,56 @@ const defaultUIState: SearchUIState = {
   showDurationDropdown: false,
   showFilters: false,
   activeField: '',
+  isExpanded: false,
+};
+
+// Storage keys
+const SEARCH_DATA_KEY = 'krib_search_data';
+const SEARCH_UI_KEY = 'krib_search_ui';
+
+// Helper functions for localStorage
+const saveToStorage = (key: string, data: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (error) {
+    console.warn('Failed to save to localStorage:', error);
+  }
+};
+
+const loadFromStorage = (key: string, defaultValue: any) => {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : defaultValue;
+  } catch (error) {
+    console.warn('Failed to load from localStorage:', error);
+    return defaultValue;
+  }
 };
 
 // Provider component
 export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
-  const [searchData, setSearchData] = useState<SearchState>(defaultSearchState);
-  const [uiState, setUIState] = useState<SearchUIState>(defaultUIState);
+  
+  // Initialize state from localStorage
+  const [searchData, setSearchData] = useState<SearchState>(() => 
+    loadFromStorage(SEARCH_DATA_KEY, defaultSearchState)
+  );
+  
+  const [uiState, setUIState] = useState<SearchUIState>(() => ({
+    ...defaultUIState,
+    // Don't persist dropdown states, only expansion state
+    isExpanded: loadFromStorage(SEARCH_UI_KEY, defaultUIState).isExpanded || false
+  }));
+
+  // Save search data to localStorage whenever it changes
+  useEffect(() => {
+    saveToStorage(SEARCH_DATA_KEY, searchData);
+  }, [searchData]);
+
+  // Save UI state to localStorage (only expansion state)
+  useEffect(() => {
+    saveToStorage(SEARCH_UI_KEY, { isExpanded: uiState.isExpanded });
+  }, [uiState.isExpanded]);
 
   const updateSearchField = (field: keyof SearchState, value: any) => {
     setSearchData(prev => ({ ...prev, [field]: value }));
@@ -89,6 +135,23 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const updateUIField = (field: keyof SearchUIState, value: any) => {
     setUIState(prev => ({ ...prev, [field]: value }));
+  };
+
+  const expandSearch = () => {
+    setUIState(prev => ({ ...prev, isExpanded: true }));
+  };
+
+  const collapseSearch = () => {
+    setUIState(prev => ({ 
+      ...prev, 
+      isExpanded: false,
+      showLocationDropdown: false,
+      showDatePicker: false,
+      showGuestPicker: false,
+      showMoveInDropdown: false,
+      showDurationDropdown: false,
+      showFilters: false,
+    }));
   };
 
   const handleSearch = () => {
@@ -115,6 +178,9 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
   const resetSearch = () => {
     setSearchData(defaultSearchState);
     setUIState(defaultUIState);
+    // Clear localStorage
+    localStorage.removeItem(SEARCH_DATA_KEY);
+    localStorage.removeItem(SEARCH_UI_KEY);
   };
 
   const closeAllDropdowns = () => {
@@ -139,6 +205,8 @@ export const SearchProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     handleSearch,
     resetSearch,
     closeAllDropdowns,
+    expandSearch,
+    collapseSearch,
   };
 
   return (

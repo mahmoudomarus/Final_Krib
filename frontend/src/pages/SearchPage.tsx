@@ -89,20 +89,41 @@ const SearchPage: React.FC = () => {
 
         console.log('Search query:', query);
         console.log('Search filters:', searchFilters);
+        console.log('API Base URL:', process.env.REACT_APP_API_URL || 'http://localhost:5001/api');
 
         // Use intelligent search service
         const result = await searchService.searchProperties(query, searchFilters);
+        console.log('Search result:', result);
+
+        // Handle different API response structures
+        let propertiesArray = [];
+        if (result && Array.isArray(result)) {
+          // Direct array response
+          propertiesArray = result;
+        } else if (result && result.properties && Array.isArray(result.properties)) {
+          // Nested response with properties field
+          propertiesArray = result.properties;
+        } else if (result && result.data && Array.isArray(result.data)) {
+          // Response with data field
+          propertiesArray = result.data;
+        } else if (result && result.data && result.data.properties && Array.isArray(result.data.properties)) {
+          // Nested data.properties structure
+          propertiesArray = result.data.properties;
+        }
+
+        console.log('Properties array:', propertiesArray);
+        console.log('Properties count:', propertiesArray.length);
 
         // Transform API data to match frontend Property type
-        const transformedProperties = result.properties.map((prop: any) => ({
+        const transformedProperties = propertiesArray.map((prop: any) => ({
           id: prop.id,
-          hostId: prop.hostId,
-          host: prop.host,
+          hostId: prop.hostId || prop.host_id,
+          host: prop.host || prop.users,
           title: prop.title,
           description: prop.description,
           slug: prop.id,
           type: prop.type,
-          rentalType: prop.isInstantBook ? 'SHORT_TERM' : 'LONG_TERM',
+          rentalType: (prop.isInstantBook || prop.is_instant_book) ? 'SHORT_TERM' : 'LONG_TERM',
           category: 'RESIDENTIAL',
           status: 'ACTIVE',
           emirate: prop.emirate,
@@ -119,34 +140,44 @@ const SearchPage: React.FC = () => {
           areaSize: prop.area || (prop.bedrooms === 0 ? 600 : prop.bedrooms * 400),
           floor: 1,
           amenities: prop.amenities ? prop.amenities.split(',') : [],
-          houseRules: prop.houseRules ? prop.houseRules.split(',') : [],
+          houseRules: prop.houseRules || prop.house_rules ? (prop.houseRules || prop.house_rules).split(',') : [],
           safetyFeatures: ['smoke_detector', 'fire_extinguisher'],
           accessibility: [],
-          images: prop.images ? prop.images.split(',').map((url: string, index: number) => ({
+          images: Array.isArray(prop.images) 
+            ? prop.images.map((img: any, index: number) => ({
+                id: `${prop.id}-${index}`,
+                propertyId: prop.id,
+                url: typeof img === 'string' ? img : img.url,
+                isMain: index === 0,
+                order: index + 1,
+              }))
+            : prop.images && typeof prop.images === 'string'
+            ? prop.images.split(',').map((url: string, index: number) => ({
             id: `${prop.id}-${index}`,
             propertyId: prop.id,
             url: url.trim(),
             isMain: index === 0,
             order: index + 1,
-          })) : [],
+              }))
+            : [],
           pricing: {
             id: `p-${prop.id}`,
             propertyId: prop.id,
-            basePrice: prop.basePrice,
+            basePrice: prop.basePrice || prop.base_price || 0,
             priceUnit: 'NIGHT',
             weekendSurcharge: 0,
             monthlyDiscount: 0,
-            securityDeposit: prop.securityDeposit || 500,
-            cleaningFee: prop.cleaningFee || 0,
+            securityDeposit: prop.securityDeposit || prop.security_deposit || 500,
+            cleaningFee: prop.cleaningFee || prop.cleaning_fee || 0,
           },
           // REAL RATINGS - Use actual API data, not fake values
-          rating: prop.averageRating || null, // null if no reviews yet
-          reviewCount: prop.reviewCount || 0, // 0 if no reviews yet
-          isInstantBook: prop.isInstantBook || false,
-          isVerified: prop.verificationStatus === 'VERIFIED',
+          rating: prop.averageRating || prop.rating || null, // null if no reviews yet
+          reviewCount: prop.reviewCount || prop.review_count || 0, // 0 if no reviews yet
+          isInstantBook: prop.isInstantBook || prop.is_instant_book || false,
+          isVerified: prop.verificationStatus === 'VERIFIED' || prop.verification_status === 'VERIFIED',
           isFeatured: false,
-          createdAt: new Date(prop.createdAt),
-          updatedAt: new Date(prop.updatedAt),
+          createdAt: new Date(prop.createdAt || prop.created_at),
+          updatedAt: new Date(prop.updatedAt || prop.updated_at),
         }));
 
         setProperties(transformedProperties);

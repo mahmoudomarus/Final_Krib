@@ -19,6 +19,7 @@ const HomePage: React.FC = () => {
     const loadProperties = async () => {
       setLoading(true);
       console.log('Loading properties...'); // Debug log
+      console.log('API Base URL:', process.env.REACT_APP_API_URL || 'http://localhost:5001/api'); // Debug log
       
       try {
         const result = await apiService.getProperties({ limit: 6 }) as any;
@@ -26,22 +27,42 @@ const HomePage: React.FC = () => {
         console.log('result.properties:', result.properties); // Debug log
         console.log('Properties array length:', result.properties?.length); // Debug log
         
-        if (result && result.properties && Array.isArray(result.properties)) {
-          console.log('Properties data:', result.properties); // Debug log
-          
-          const transformedProperties = result.properties.map((property: any) => ({
+        // Handle both direct properties array and nested data structure
+        let propertiesArray = [];
+        if (result && Array.isArray(result)) {
+          // Direct array response
+          propertiesArray = result;
+        } else if (result && result.properties && Array.isArray(result.properties)) {
+          // Nested response with properties field
+          propertiesArray = result.properties;
+        } else if (result && result.data && Array.isArray(result.data)) {
+          // Response with data field
+          propertiesArray = result.data;
+        } else if (result && result.data && result.data.properties && Array.isArray(result.data.properties)) {
+          // Nested data.properties structure
+          propertiesArray = result.data.properties;
+        }
+        
+        console.log('Properties array:', propertiesArray); // Debug log
+        console.log('Properties count:', propertiesArray.length); // Debug log
+        
+        if (propertiesArray.length > 0) {
+          const transformedProperties = propertiesArray.map((property: any) => ({
             ...property,
-            location: `${property.address}, ${property.city}`,
-            coordinates: { lat: property.latitude, lng: property.longitude },
-            image: property.images?.[0]?.url || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800',
-            price: property.basePrice,
+            location: `${property.address || property.city}, ${property.city}`,
+            coordinates: { 
+              lat: property.latitude || 25.2048, 
+              lng: property.longitude || 55.2708 
+            },
+            image: property.images?.[0]?.url || property.images?.[0] || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800',
+            price: property.basePrice || property.base_price || 0,
             priceUnit: 'night',
             type: 'short-term',
-            badge: property.isInstantBook ? 'Instant Book' : 'Featured',
-            badgeColor: property.isInstantBook ? 'bg-success-600' : 'bg-primary-600',
+            badge: property.isInstantBook || property.is_instant_book ? 'Instant Book' : 'Featured',
+            badgeColor: property.isInstantBook || property.is_instant_book ? 'bg-success-600' : 'bg-primary-600',
             // Use real rating data
-            rating: property.averageRating,
-            reviewCount: property.reviewCount || 0
+            rating: property.averageRating || property.rating || null,
+            reviewCount: property.reviewCount || property.review_count || 0
           }));
           
           console.log('Transformed Properties:', transformedProperties); // Debug log
@@ -57,6 +78,11 @@ const HomePage: React.FC = () => {
         }
       } catch (error) {
         console.error('Error loading properties:', error);
+        console.error('Error details:', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+          stack: error instanceof Error ? error.stack : undefined,
+          name: error instanceof Error ? error.name : 'Unknown'
+        });
         setFeaturedProperties([]);
       } finally {
         setLoading(false);
@@ -93,7 +119,9 @@ const HomePage: React.FC = () => {
             </p>
             
             {/* Unified Search Bar */}
-            <UnifiedSearchBar className="overflow-visible" />
+            <div className="relative z-50">
+              <UnifiedSearchBar className="overflow-visible z-50" />
+            </div>
           </div>
         </div>
       </section>

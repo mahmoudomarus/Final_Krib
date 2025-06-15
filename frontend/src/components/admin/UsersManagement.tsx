@@ -569,17 +569,17 @@ const UsersManagement: React.FC = () => {
                                 {user.status === 'active' ? (
                                   <button
                                     className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                                    onClick={() => {
-                                      setSelectedUser(user);
-                                      setShowSuspendModal(true);
+                            onClick={() => {
+                              setSelectedUser(user);
+                              setShowSuspendModal(true);
                                       setOpenDropdown(null);
-                                    }}
+                            }}
                                     disabled={actionLoading}
-                                  >
+                          >
                                     <Ban className="w-4 h-4 mr-2 text-yellow-600" />
                                     Suspend User
                                   </button>
-                                ) : user.status === 'suspended' ? (
+                        ) : user.status === 'suspended' ? (
                                   <button
                                     className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                                     onClick={() => {
@@ -587,11 +587,11 @@ const UsersManagement: React.FC = () => {
                                       setOpenDropdown(null);
                                     }}
                                     disabled={actionLoading}
-                                  >
+                          >
                                     <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
                                     Activate User
                                   </button>
-                                ) : null}
+                        ) : null}
                                 
                                 {/* Divider */}
                                 <div className="border-t border-gray-100 my-1"></div>

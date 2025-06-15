@@ -17,6 +17,23 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
   onClick,
   layout = 'grid',
 }) => {
+  // Helper function to get the first image URL regardless of data structure
+  const getFirstImageUrl = () => {
+    if (!property.images || property.images.length === 0) {
+      return '/placeholder-property.jpg';
+    }
+    
+    const firstImage = property.images[0];
+    // Handle both string URLs and image objects with url property
+    if (typeof firstImage === 'string') {
+      return firstImage;
+    } else if (firstImage && typeof firstImage === 'object' && 'url' in firstImage) {
+      return firstImage.url;
+    }
+    
+    return '/placeholder-property.jpg';
+  };
+
   // Grid layout (default - vertical card)
   if (layout === 'grid') {
     return (
@@ -29,9 +46,12 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
         {/* Image Gallery */}
         <div className="relative aspect-square overflow-hidden">
           <img
-            src={property.images[0]?.url || '/placeholder-property.jpg'}
+            src={getFirstImageUrl()}
             alt={property.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/placeholder-property.jpg';
+            }}
           />
           
           {/* Favorite Button */}
@@ -78,8 +98,8 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
 
           {/* Price */}
           <div className="text-sm text-gray-900">
-            <span className="font-semibold">AED {property.pricing.basePrice.toLocaleString()}</span>
-            <span className="text-gray-600"> /{property.pricing.priceUnit.toLowerCase()}</span>
+            <span className="font-semibold">AED {property.pricing?.basePrice?.toLocaleString() || 0}</span>
+            <span className="text-gray-600"> /{property.pricing?.priceUnit?.toLowerCase() || 'night'}</span>
           </div>
         </div>
       </Card>
@@ -98,9 +118,12 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
         {/* Image - smaller and on the left */}
         <div className="relative w-64 h-48 flex-shrink-0 overflow-hidden">
           <img
-            src={property.images[0]?.url || '/placeholder-property.jpg'}
+            src={getFirstImageUrl()}
             alt={property.title}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/placeholder-property.jpg';
+            }}
           />
           
           {/* Favorite Button */}
@@ -139,8 +162,8 @@ export const PropertyCard: React.FC<PropertyCardProps> = ({
               </div>
               
               <div className="text-gray-900">
-                <span className="font-semibold text-lg">AED {property.pricing.basePrice.toLocaleString()}</span>
-                <span className="text-gray-600"> /{property.pricing.priceUnit.toLowerCase()}</span>
+                <span className="font-semibold text-lg">AED {property.pricing?.basePrice?.toLocaleString() || 0}</span>
+                <span className="text-gray-600"> /{property.pricing?.priceUnit?.toLowerCase() || 'night'}</span>
               </div>
             </div>
 

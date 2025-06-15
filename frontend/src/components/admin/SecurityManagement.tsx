@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, 
-  Lock,
+  Lock, 
   Eye, 
   AlertTriangle,
   CheckCircle,
@@ -95,10 +95,10 @@ const SecurityManagement: React.FC = () => {
       
       // The data should contain: { stats, events, accessLogs, rules }
       if (data && data.stats) {
-        setSecurityStats(data.stats);
-        setSecurityEvents(data.events);
-        setAccessLogs(data.accessLogs);
-        setSecurityRules(data.rules);
+      setSecurityStats(data.stats);
+      setSecurityEvents(data.events);
+      setAccessLogs(data.accessLogs);
+      setSecurityRules(data.rules);
       } else {
         throw new Error('Invalid API response structure');
       }
@@ -470,8 +470,8 @@ const SecurityManagement: React.FC = () => {
                           onClick={() => handleSecurityEventAction(event.id, 'investigate', 'Under investigation')}
                           disabled={actionLoading}
                         >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <Eye className="w-4 h-4" />
+                      </Button>
                       )}
                       <Button 
                         size="sm" 

@@ -74,12 +74,19 @@ export const MapView: React.FC<MapViewProps> = ({
             try {
               // Import the maps library
               await (window as any).google.maps.importLibrary("maps");
+              // Import the marker library for AdvancedMarkerElement
+              await (window as any).google.maps.importLibrary("marker");
               window.googleMapsLoaded = true;
               setMapLoaded(true);
               setLoading(false);
             } catch (err) {
               console.error('Failed to import maps library:', err);
-              setError('Failed to load Google Maps');
+              // Check if it's an API key issue
+              if (err instanceof Error && err.message && err.message.includes('ApiNotActivatedMapError')) {
+                setError('Google Maps API is not activated. Please enable the Maps JavaScript API in your Google Cloud Console.');
+              } else {
+                setError('Failed to load Google Maps. Please check your API key and internet connection.');
+              }
               setLoading(false);
             }
           } else {
@@ -110,13 +117,6 @@ export const MapView: React.FC<MapViewProps> = ({
       const map = new (window as any).google.maps.Map(mapRef.current, {
         center: center,
         zoom: zoom,
-        styles: [
-          {
-            featureType: 'poi',
-            elementType: 'labels',
-            stylers: [{ visibility: 'off' }]
-          }
-        ],
         mapTypeControl: false,
         fullscreenControl: true,
         zoomControl: true,
@@ -131,16 +131,18 @@ export const MapView: React.FC<MapViewProps> = ({
       });
       markersRef.current = [];
 
-      // Add markers for properties
+      // Add markers for properties - use standard Marker for now to avoid AdvancedMarkerElement issues
       properties.forEach(property => {
         if (!property.coordinates?.latitude || !property.coordinates?.longitude) return;
 
-        // Create a standard marker (simplified for now)
+        const position = {
+          lat: property.coordinates.latitude,
+          lng: property.coordinates.longitude
+        };
+
+        // Use standard Marker (works reliably)
         const marker = new (window as any).google.maps.Marker({
-          position: {
-            lat: property.coordinates.latitude,
-            lng: property.coordinates.longitude
-          },
+          position: position,
           map: map,
           title: property.title,
           icon: {
@@ -214,9 +216,19 @@ export const MapView: React.FC<MapViewProps> = ({
     return (
       <div className={`relative w-full ${className}`} style={{ height }}>
         <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg">
-          <div className="text-center">
+          <div className="text-center p-6">
             <p className="text-sm text-red-600 mb-2">Failed to load map</p>
-            <p className="text-xs text-gray-500">{error}</p>
+            <p className="text-xs text-gray-500 mb-4">{error}</p>
+            {error.includes('ApiNotActivatedMapError') && (
+              <div className="text-xs text-gray-600">
+                <p className="mb-2">To fix this:</p>
+                <ol className="text-left list-decimal list-inside space-y-1">
+                  <li>Go to Google Cloud Console</li>
+                  <li>Enable the Maps JavaScript API</li>
+                  <li>Refresh this page</li>
+                </ol>
+              </div>
+            )}
           </div>
         </div>
       </div>

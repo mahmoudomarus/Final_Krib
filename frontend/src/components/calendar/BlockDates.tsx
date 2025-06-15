@@ -149,20 +149,20 @@ export const BlockDates: React.FC<BlockDatesProps> = ({
   };
 
   const getDayClass = (day: any) => {
-    let baseClass = 'p-2 text-center cursor-pointer transition-colors border border-gray-200 min-h-[40px] flex items-center justify-center';
+    let baseClass = 'p-2 text-center transition-colors border border-gray-200 min-h-[40px] flex items-center justify-center';
     
     if (!day.isCurrentMonth) {
-      baseClass += ' text-gray-300';
+      baseClass += ' text-gray-300 cursor-default';
     } else if (day.isPast) {
-      baseClass += ' text-gray-400 bg-gray-50 cursor-not-allowed';
+      baseClass += ' text-gray-400 bg-gray-50 cursor-default';
     } else if (day.isBlocked) {
-      baseClass += ' text-red-500 bg-red-50 cursor-not-allowed';
+      baseClass += ' text-red-500 bg-red-50 cursor-pointer';
     } else if (day.isSelected) {
-      baseClass += ' bg-primary-600 text-white';
+      baseClass += ' bg-primary-600 text-white cursor-pointer';
     } else if (day.isToday) {
-      baseClass += ' bg-blue-100 text-blue-800';
+      baseClass += ' bg-blue-100 text-blue-800 cursor-pointer';
     } else {
-      baseClass += ' text-gray-700 hover:bg-gray-100';
+      baseClass += ' text-gray-700 hover:bg-gray-100 cursor-pointer';
     }
     
     return baseClass;
