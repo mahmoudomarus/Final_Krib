@@ -117,7 +117,7 @@ export const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
   useEffect(() => {
     const fetchPopularSearches = async () => {
       try {
-        const response = await apiService.get('/api/properties/popular-searches') as PopularSearchData;
+        const response = await apiService.get('/properties/popular-searches') as PopularSearchData;
         setPopularSearches(response);
       } catch (error) {
         console.error('Error fetching popular searches:', error);
@@ -149,7 +149,7 @@ export const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
 
     setLoadingSuggestions(true);
     try {
-      const response = await apiService.get(`/api/properties/autocomplete?q=${encodeURIComponent(query)}&limit=8`) as { suggestions: SearchSuggestion[] };
+      const response = await apiService.get(`/properties/autocomplete?q=${encodeURIComponent(query)}&limit=8`) as { suggestions: SearchSuggestion[] };
       // Add icons and colors based on category
       const enhancedSuggestions = response.suggestions.map((suggestion: SearchSuggestion) => ({
         ...suggestion,

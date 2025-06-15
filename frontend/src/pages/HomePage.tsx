@@ -33,7 +33,7 @@ const HomePage: React.FC = () => {
             ...property,
             location: `${property.address}, ${property.city}`,
             coordinates: { lat: property.latitude, lng: property.longitude },
-            image: property.images?.split(',')[0] || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800',
+            image: property.images?.[0]?.url || 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=800',
             price: property.basePrice,
             priceUnit: 'night',
             type: 'short-term',
