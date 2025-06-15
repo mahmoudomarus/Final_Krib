@@ -12,18 +12,38 @@ class NotificationService {
         if (process.env.SENDGRID_API_KEY) {
             mail_1.default.setApiKey(process.env.SENDGRID_API_KEY);
             this.emailEnabled = true;
+            console.log('✅ SendGrid email service initialized successfully');
         }
         else {
             this.emailEnabled = false;
             console.warn('SendGrid API key not found. Email notifications disabled.');
         }
-        if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-            this.twilioClient = (0, twilio_1.default)(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-            this.smsEnabled = true;
+        if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
+            try {
+                if (process.env.TWILIO_ACCOUNT_SID.startsWith('SK')) {
+                    this.twilioClient = (0, twilio_1.default)(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+                    this.smsEnabled = true;
+                    console.log('✅ Twilio SMS service initialized with API Key successfully');
+                }
+                else if (process.env.TWILIO_ACCOUNT_SID.startsWith('AC')) {
+                    this.twilioClient = (0, twilio_1.default)(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+                    this.smsEnabled = true;
+                    console.log('✅ Twilio SMS service initialized with Account SID successfully');
+                }
+                else {
+                    console.warn('Invalid Twilio Account SID format. SMS notifications disabled.');
+                    this.smsEnabled = false;
+                }
+            }
+            catch (error) {
+                console.error('Twilio initialization error:', error.message);
+                this.smsEnabled = false;
+            }
         }
         else {
             this.smsEnabled = false;
-            console.warn('Twilio credentials not found. SMS notifications disabled.');
+            console.warn('Twilio credentials incomplete. SMS notifications disabled.');
+            console.warn('Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER');
         }
     }
     async createNotification(data) {
@@ -454,6 +474,91 @@ class NotificationService {
             sendEmail: true,
             sendSMS: true,
         });
+    }
+    async sendViewingRequest(agentId, guestName, propertyTitle, requestedDate, requestedTime, requestId) {
+        return this.createNotification({
+            userId: agentId,
+            title: 'New Viewing Request',
+            message: `${guestName} has requested to view "${propertyTitle}" on ${requestedDate} at ${requestedTime}.`,
+            type: 'PROPERTY',
+            data: { guestName, propertyTitle, requestedDate, requestedTime, requestId },
+            actionUrl: `${process.env.CLIENT_URL}/agent/dashboard?tab=viewing-requests`,
+            actionText: 'View Request',
+            sendEmail: true,
+            sendSMS: true,
+        });
+    }
+    async sendViewingConfirmed(guestEmail, guestName, propertyTitle, confirmedDate, confirmedTime) {
+        try {
+            const msg = {
+                to: guestEmail,
+                from: {
+                    email: process.env.SENDGRID_FROM_EMAIL || 'noreply@uae-rental.com',
+                    name: process.env.SENDGRID_FROM_NAME || 'UAE Rental Platform',
+                },
+                subject: 'Viewing Request Confirmed - UAE Rental Platform',
+                html: `
+          <h2>Viewing Request Confirmed!</h2>
+          <p>Hello ${guestName},</p>
+          <p>Great news! Your viewing request for <strong>"${propertyTitle}"</strong> has been confirmed.</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3>Viewing Details:</h3>
+            <p><strong>Property:</strong> ${propertyTitle}</p>
+            <p><strong>Date:</strong> ${confirmedDate}</p>
+            <p><strong>Time:</strong> ${confirmedTime}</p>
+          </div>
+          <p>Please arrive on time and bring a valid ID for verification.</p>
+          <p>If you need to reschedule or cancel, please contact us as soon as possible.</p>
+          <br>
+          <p>Best regards,<br>UAE Rental Platform Team</p>
+        `,
+                text: `Viewing Request Confirmed!\n\nHello ${guestName},\n\nGreat news! Your viewing request for "${propertyTitle}" has been confirmed.\n\nViewing Details:\nProperty: ${propertyTitle}\nDate: ${confirmedDate}\nTime: ${confirmedTime}\n\nPlease arrive on time and bring a valid ID for verification.\n\nIf you need to reschedule or cancel, please contact us as soon as possible.\n\nBest regards,\nUAE Rental Platform Team`,
+            };
+            if (this.emailEnabled) {
+                await mail_1.default.send(msg);
+                console.log(`Viewing confirmation email sent to ${guestEmail}`);
+            }
+        }
+        catch (error) {
+            console.error('Error sending viewing confirmation email:', error);
+            throw error;
+        }
+    }
+    async sendViewingRejected(guestEmail, guestName, propertyTitle) {
+        try {
+            const msg = {
+                to: guestEmail,
+                from: {
+                    email: process.env.SENDGRID_FROM_EMAIL || 'noreply@uae-rental.com',
+                    name: process.env.SENDGRID_FROM_NAME || 'UAE Rental Platform',
+                },
+                subject: 'Viewing Request Update - UAE Rental Platform',
+                html: `
+          <h2>Viewing Request Update</h2>
+          <p>Hello ${guestName},</p>
+          <p>Thank you for your interest in <strong>"${propertyTitle}"</strong>.</p>
+          <p>Unfortunately, we're unable to accommodate your viewing request at the requested time. This could be due to scheduling conflicts or the property no longer being available.</p>
+          <p>We encourage you to:</p>
+          <ul>
+            <li>Browse other similar properties on our platform</li>
+            <li>Contact us to discuss alternative viewing times</li>
+            <li>Set up alerts for similar properties in your preferred area</li>
+          </ul>
+          <p>We appreciate your understanding and look forward to helping you find your perfect home.</p>
+          <br>
+          <p>Best regards,<br>UAE Rental Platform Team</p>
+        `,
+                text: `Viewing Request Update\n\nHello ${guestName},\n\nThank you for your interest in "${propertyTitle}".\n\nUnfortunately, we're unable to accommodate your viewing request at the requested time. This could be due to scheduling conflicts or the property no longer being available.\n\nWe encourage you to:\n- Browse other similar properties on our platform\n- Contact us to discuss alternative viewing times\n- Set up alerts for similar properties in your preferred area\n\nWe appreciate your understanding and look forward to helping you find your perfect home.\n\nBest regards,\nUAE Rental Platform Team`,
+            };
+            if (this.emailEnabled) {
+                await mail_1.default.send(msg);
+                console.log(`Viewing rejection email sent to ${guestEmail}`);
+            }
+        }
+        catch (error) {
+            console.error('Error sending viewing rejection email:', error);
+            throw error;
+        }
     }
     async sendBulkNotification(userIds, notificationData) {
         const notifications = await Promise.all(userIds.map(userId => this.createNotification({ ...notificationData, userId })));

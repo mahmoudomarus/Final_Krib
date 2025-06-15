@@ -311,9 +311,49 @@ router.get('/search', async (req: Request, res: Response) => {
       `, { count: 'exact' })
       .eq('is_active', true);
 
-    // Text search using Supabase's text search capabilities
+    // Enhanced text search with better relevance scoring
     if (q) {
-      query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,area.ilike.%${q}%,city.ilike.%${q}%,emirate.ilike.%${q}%`);
+      const searchTerm = q.toString().trim();
+      
+      // Use full-text search for better performance and relevance (only on text columns)
+      query = query.or(`title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,city.ilike.%${searchTerm}%,emirate.ilike.%${searchTerm}%,type.ilike.%${searchTerm}%`);
+    }
+    
+    // Apply additional filters
+    if (filters.emirate) {
+      query = query.eq('emirate', filters.emirate);
+    }
+    
+    if (filters.city) {
+      query = query.eq('city', filters.city);
+    }
+    
+    if (filters.propertyType) {
+      query = query.eq('type', filters.propertyType);
+    }
+    
+    if (filters.minPrice) {
+      query = query.gte('base_price', parseInt(filters.minPrice as string));
+    }
+    
+    if (filters.maxPrice) {
+      query = query.lte('base_price', parseInt(filters.maxPrice as string));
+    }
+    
+    if (filters.bedrooms) {
+      query = query.eq('bedrooms', parseInt(filters.bedrooms as string));
+    }
+    
+    if (filters.bathrooms) {
+      query = query.gte('bathrooms', parseInt(filters.bathrooms as string));
+    }
+    
+    if (filters.maxGuests) {
+      query = query.gte('guests', parseInt(filters.maxGuests as string));
+    }
+    
+    if (filters.instantBook === 'true') {
+      query = query.eq('is_instant_book', true);
     }
 
     // Sorting
@@ -417,9 +457,127 @@ router.get('/search', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error searching properties:', error);
+    console.error('Full error details:', JSON.stringify(error, null, 2));
     res.status(500).json({
       success: false,
       error: 'Failed to search properties',
+      details: process.env.NODE_ENV === 'development' ? error : undefined,
+    });
+  }
+});
+
+// Autocomplete search suggestions
+router.get('/autocomplete', async (req: Request, res: Response) => {
+  try {
+    const { q, limit = 10 } = req.query;
+    
+    if (!q || typeof q !== 'string' || q.trim().length < 2) {
+      return res.json({
+        success: true,
+        data: {
+          suggestions: []
+        }
+      });
+    }
+    
+    const searchTerm = q.toString().trim();
+    
+    // Get location suggestions
+    const { data: locationSuggestions } = await supabaseAdmin
+      .from('properties')
+      .select('emirate, city, area')
+      .eq('is_active', true)
+      .or(`emirate.ilike.%${searchTerm}%,city.ilike.%${searchTerm}%,area.ilike.%${searchTerm}%`)
+      .limit(parseInt(limit as string));
+    
+    // Get property type suggestions
+    const { data: typeSuggestions } = await supabaseAdmin
+      .from('properties')
+      .select('type')
+      .eq('is_active', true)
+      .ilike('type', `%${searchTerm}%`)
+      .limit(5);
+    
+    // Get property title suggestions
+    const { data: titleSuggestions } = await supabaseAdmin
+      .from('properties')
+      .select('id, title, city, emirate')
+      .eq('is_active', true)
+      .ilike('title', `%${searchTerm}%`)
+      .limit(5);
+    
+    // Combine and format suggestions
+    const suggestions: any[] = [];
+    
+    // Add unique locations
+    const uniqueLocations = new Set();
+    locationSuggestions?.forEach(prop => {
+      if (prop.emirate && !uniqueLocations.has(prop.emirate)) {
+        uniqueLocations.add(prop.emirate);
+        suggestions.push({
+          type: 'location',
+          value: prop.emirate,
+          label: prop.emirate,
+          category: 'Emirate'
+        });
+      }
+      if (prop.city && !uniqueLocations.has(prop.city)) {
+        uniqueLocations.add(prop.city);
+        suggestions.push({
+          type: 'location',
+          value: prop.city,
+          label: `${prop.city}, ${prop.emirate}`,
+          category: 'City'
+        });
+      }
+      if (prop.area && !uniqueLocations.has(prop.area)) {
+        uniqueLocations.add(prop.area);
+        suggestions.push({
+          type: 'location',
+          value: prop.area,
+          label: `${prop.area}, ${prop.city}`,
+          category: 'Area'
+        });
+      }
+    });
+    
+    // Add property types
+    const uniqueTypes = new Set();
+    typeSuggestions?.forEach(prop => {
+      if (prop.type && !uniqueTypes.has(prop.type)) {
+        uniqueTypes.add(prop.type);
+        suggestions.push({
+          type: 'property_type',
+          value: prop.type,
+          label: prop.type,
+          category: 'Property Type'
+        });
+      }
+    });
+    
+    // Add property titles
+    titleSuggestions?.forEach(prop => {
+      suggestions.push({
+        type: 'property',
+        value: prop.id,
+        label: prop.title,
+        sublabel: `${prop.city}, ${prop.emirate}`,
+        category: 'Property'
+      });
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        suggestions: suggestions.slice(0, parseInt(limit as string))
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error getting autocomplete suggestions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get suggestions'
     });
   }
 });
@@ -500,6 +658,110 @@ router.get('/nearby', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       error: 'Failed to fetch nearby properties',
+    });
+  }
+});
+
+// Track search analytics
+router.post('/search-analytics', async (req: Request, res: Response) => {
+  try {
+    const { query, filters, resultCount, timestamp } = req.body;
+    
+    // Store search analytics in database
+    const { error } = await supabaseAdmin
+      .from('analytics_events')
+      .insert({
+        event_type: 'SEARCH',
+        event_data: {
+          query,
+          filters,
+          resultCount,
+          timestamp
+        },
+        user_id: (req as any).user?.id || null,
+        created_at: new Date().toISOString()
+      });
+
+    if (error) {
+      console.error('Error storing search analytics:', error);
+      // Don't fail the request if analytics storage fails
+    }
+
+    res.json({
+      success: true,
+      message: 'Search analytics recorded'
+    });
+
+  } catch (error) {
+    console.error('Error tracking search analytics:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to track search analytics'
+    });
+  }
+});
+
+// Get popular search terms and locations
+router.get('/popular-searches', async (req: Request, res: Response) => {
+  try {
+    // Get popular locations from actual property data
+    const { data: popularLocations } = await supabaseAdmin
+      .from('properties')
+      .select('emirate, city, area')
+      .eq('is_active', true);
+    
+    // Count occurrences
+    const locationCounts: { [key: string]: number } = {};
+    popularLocations?.forEach(prop => {
+      if (prop.emirate) locationCounts[prop.emirate] = (locationCounts[prop.emirate] || 0) + 1;
+      if (prop.city) locationCounts[prop.city] = (locationCounts[prop.city] || 0) + 1;
+      if (prop.area) locationCounts[prop.area] = (locationCounts[prop.area] || 0) + 1;
+    });
+    
+    // Sort by popularity
+    const sortedLocations = Object.entries(locationCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 10)
+      .map(([location, count]) => ({ location, count }));
+    
+    // Get popular property types
+    const { data: propertyTypes } = await supabaseAdmin
+      .from('properties')
+      .select('type')
+      .eq('is_active', true);
+    
+    const typeCounts: { [key: string]: number } = {};
+    propertyTypes?.forEach(prop => {
+      if (prop.type) {
+        typeCounts[prop.type] = (typeCounts[prop.type] || 0) + 1;
+      }
+    });
+    
+    const sortedTypes = Object.entries(typeCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 5)
+      .map(([type, count]) => ({ type, count }));
+    
+    res.json({
+      success: true,
+      data: {
+        popularLocations: sortedLocations,
+        popularTypes: sortedTypes,
+        trendingSearches: [
+          'Dubai Marina',
+          'Downtown Dubai',
+          'Business Bay',
+          'JBR',
+          'Palm Jumeirah'
+        ]
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error getting popular searches:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get popular searches'
     });
   }
 });

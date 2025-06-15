@@ -1,8 +1,10 @@
 import express from 'express';
 import { authMiddleware, AuthenticatedRequest, requireAgent } from '../middleware/auth';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
+import { NotificationService } from '../services/NotificationService';
 
 const router = express.Router();
+const notificationService = new NotificationService();
 
 // Track property view
 router.post('/track-view', authMiddleware, async (req: AuthenticatedRequest, res) => {
@@ -593,15 +595,38 @@ router.post('/viewing-requests', async (req: AuthenticatedRequest, res) => {
       created_at: new Date().toISOString()
     };
 
-    const { data: viewingRequest, error } = await supabase
+    console.log('📝 Attempting to insert viewing request:', viewingRequestData);
+    
+    const { data: viewingRequest, error } = await supabaseAdmin
       .from('viewing_requests')
       .insert(viewingRequestData)
       .select()
       .single();
 
     if (error) {
-      console.error('Error creating viewing request:', error);
+      console.error('❌ Error creating viewing request:', error);
+      console.error('❌ Full error details:', JSON.stringify(error, null, 2));
       return res.status(500).json({ error: 'Failed to create viewing request' });
+    }
+    
+    console.log('✅ Viewing request created successfully:', viewingRequest.id);
+
+    // Send notification to agent/lister
+    if (agentId) {
+      try {
+        await notificationService.sendViewingRequest(
+          agentId,
+          guestName,
+          propertyTitle,
+          requestedDate,
+          requestedTime,
+          viewingRequest.id
+        );
+        console.log(`Viewing request notification sent to agent ${agentId}`);
+      } catch (notificationError) {
+        console.error('Error sending viewing request notification:', notificationError);
+        // Don't fail the request if notification fails
+      }
     }
 
     res.json({ 
@@ -627,7 +652,7 @@ router.get('/viewing-requests/:agentId', authMiddleware, async (req: Authenticat
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    const { data: viewingRequests, error } = await supabase
+    const { data: viewingRequests, error } = await supabaseAdmin
       .from('viewing_requests')
       .select('*')
       .eq('agent_id', agentId)
@@ -675,7 +700,7 @@ router.put('/viewing-requests/:requestId', authMiddleware, async (req: Authentic
       return res.status(400).json({ error: 'Invalid status' });
     }
 
-    const { data: viewingRequest, error } = await supabase
+    const { data: viewingRequest, error } = await supabaseAdmin
       .from('viewing_requests')
       .update({ 
         status,
@@ -689,6 +714,29 @@ router.put('/viewing-requests/:requestId', authMiddleware, async (req: Authentic
     if (error) {
       console.error('Error updating viewing request:', error);
       return res.status(500).json({ error: 'Failed to update viewing request' });
+    }
+
+    // Send notification to guest about the response
+    try {
+      if (status === 'confirmed') {
+        await notificationService.sendViewingConfirmed(
+          viewingRequest.guest_email,
+          viewingRequest.guest_name,
+          viewingRequest.property_title,
+          viewingRequest.requested_date,
+          viewingRequest.requested_time
+        );
+      } else if (status === 'rejected') {
+        await notificationService.sendViewingRejected(
+          viewingRequest.guest_email,
+          viewingRequest.guest_name,
+          viewingRequest.property_title
+        );
+      }
+      console.log(`Viewing ${status} notification sent to guest`);
+    } catch (notificationError) {
+      console.error('Error sending viewing response notification:', notificationError);
+      // Don't fail the request if notification fails
     }
 
     res.json({ 

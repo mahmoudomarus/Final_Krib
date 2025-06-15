@@ -1,17 +1,10 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Search, Plus, Minus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useSearch } from '../../contexts/SearchContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui/Button';
-
-// UAE destinations for search suggestions
-const uaeDestinations = [
-  { id: 'nearby', name: 'Nearby', subtitle: "Find what's around you", icon: '📍', color: 'bg-green-50 text-green-600' },
-  { id: 'dubai-marina', name: 'Dubai Marina', subtitle: "Dubai's Eye", icon: '🏗️', color: 'bg-blue-50 text-blue-600' },
-  { id: 'abu-dhabi', name: 'Abu Dhabi', subtitle: 'Yas Island', icon: '🇦🇪', color: 'bg-purple-50 text-purple-600' },
-  { id: 'sharjah', name: 'Sharjah', subtitle: 'Sharjah Museum', icon: '📍', color: 'bg-pink-50 text-pink-600' },
-  { id: 'dubai-mall', name: 'Dubai', subtitle: 'Dubai Mall', icon: '📍', color: 'bg-yellow-50 text-yellow-600' },
-  { id: 'dubai-hills', name: 'Dubai', subtitle: 'Dubai Hills', icon: '📍', color: 'bg-orange-50 text-orange-600' },
-];
+import { apiService } from '../../services/api';
+import { RoleService } from '../../services/roleService';
 
 // Move-in options for long-term rentals
 const moveInOptions = [
@@ -36,89 +29,236 @@ const months = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-const getDaysInMonth = (year: number, month: number) => {
-  return new Date(year, month + 1, 0).getDate();
-};
-
-const getFirstDayOfMonth = (year: number, month: number) => {
-  return new Date(year, month, 1).getDay();
-};
-
 interface UnifiedSearchBarProps {
-  isCompact?: boolean;
+  variant?: 'compact' | 'expanded';
   className?: string;
 }
 
+interface SearchSuggestion {
+  type: 'location' | 'property_type' | 'property';
+  value: string;
+  label: string;
+  sublabel?: string;
+  category: string;
+  icon?: string;
+  color?: string;
+}
+
+interface PopularSearchData {
+  popularLocations: Array<{ location: string; count: number }>;
+  popularTypes: Array<{ type: string; count: number }>;
+  trendingSearches: string[];
+}
+
 export const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({ 
-  isCompact = false, 
+  variant = 'expanded', 
   className = '' 
 }) => {
-  const { 
-    searchData, 
-    uiState, 
-    updateSearchField, 
-    updateUIField, 
-    handleSearch, 
-    closeAllDropdowns 
-  } = useSearch();
+  const { searchData, uiState, updateSearchField, updateUIField, handleSearch } = useSearch();
+  const { user } = useAuth();
+  const [searchSuggestions, setSearchSuggestions] = useState<SearchSuggestion[]>([]);
+  const [popularSearches, setPopularSearches] = useState<PopularSearchData | null>(null);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
 
-  // Date picker state
-  const [currentDate, setCurrentDate] = React.useState(new Date());
-  const [selectedStartDate, setSelectedStartDate] = React.useState<Date | null>(null);
-  const [selectedEndDate, setSelectedEndDate] = React.useState<Date | null>(null);
-  const [isSelectingEndDate, setIsSelectingEndDate] = React.useState(false);
-
-  // Initialize dates from search data
-  React.useEffect(() => {
-    if (searchData.checkIn) {
-      setSelectedStartDate(new Date(searchData.checkIn));
+  // Determine search behavior based on user role
+  const getSearchBehavior = () => {
+    if (!user) {
+      return {
+        type: 'guest',
+        showShortTerm: true,
+        showLongTerm: true,
+        placeholder: 'Search destinations',
+        defaultRentalType: 'short-term' as const
+      };
     }
-    if (searchData.checkOut) {
-      setSelectedEndDate(new Date(searchData.checkOut));
-    }
-  }, [searchData.checkIn, searchData.checkOut]);
 
-  // Date picker functions
-  const handleDateSelect = (date: Date) => {
-    if (!isSelectingEndDate && !selectedStartDate) {
-      // First date selection (check-in)
-      setSelectedStartDate(date);
-      setIsSelectingEndDate(true);
-      updateSearchField('checkIn', date.toISOString().split('T')[0]);
-    } else if (isSelectingEndDate) {
-      // Second date selection (check-out)
-      if (selectedStartDate && date < selectedStartDate) {
-        // If selected date is before check-in, make it the new check-in
-        setSelectedStartDate(date);
-        setSelectedEndDate(null);
-        setIsSelectingEndDate(true);
-        updateSearchField('checkIn', date.toISOString().split('T')[0]);
-        updateSearchField('checkOut', '');
-      } else {
-        // Valid check-out date
-        setSelectedEndDate(date);
-        setIsSelectingEndDate(false);
-        updateSearchField('checkOut', date.toISOString().split('T')[0]);
-        updateUIField('showDatePicker', false);
+    const userRole = RoleService.getUserRole(user);
+
+    switch (userRole) {
+      case 'super_admin':
+        return {
+          type: 'admin',
+          showShortTerm: true,
+          showLongTerm: true,
+          placeholder: 'Search all properties (Admin)',
+          defaultRentalType: 'short-term' as const
+        };
+      case 'host':
+        return {
+          type: 'host',
+          showShortTerm: true,
+          showLongTerm: false, // Hosts focus on short-term
+          placeholder: 'Search destinations for guests',
+          defaultRentalType: 'short-term' as const
+        };
+      case 'agent':
+        return {
+          type: 'lister',
+          showShortTerm: false,
+          showLongTerm: true, // Listers focus on long-term
+          placeholder: 'Search long-term properties',
+          defaultRentalType: 'long-term' as const
+        };
+      default:
+        return {
+          type: 'guest',
+          showShortTerm: true,
+          showLongTerm: true,
+          placeholder: 'Search destinations',
+          defaultRentalType: 'short-term' as const
+        };
+    }
+  };
+
+  const searchBehavior = getSearchBehavior();
+
+  // Fetch popular searches on component mount
+  useEffect(() => {
+    const fetchPopularSearches = async () => {
+      try {
+        const response = await apiService.get('/api/properties/popular-searches') as PopularSearchData;
+        setPopularSearches(response);
+      } catch (error) {
+        console.error('Error fetching popular searches:', error);
+        // Fallback to basic suggestions
+        setPopularSearches({
+          popularLocations: [
+            { location: 'Dubai', count: 8 },
+            { location: 'Abu Dhabi', count: 3 },
+            { location: 'Sharjah', count: 1 }
+          ],
+          popularTypes: [
+            { type: 'APARTMENT', count: 2 },
+            { type: 'VILLA', count: 1 }
+          ],
+          trendingSearches: ['Dubai Marina', 'Downtown Dubai', 'Business Bay']
+        });
       }
-    } else {
-      // Start over
-      setSelectedStartDate(date);
-      setSelectedEndDate(null);
-      setIsSelectingEndDate(true);
-      updateSearchField('checkIn', date.toISOString().split('T')[0]);
-      updateSearchField('checkOut', '');
+    };
+
+    fetchPopularSearches();
+  }, []);
+
+  // Fetch search suggestions based on user input
+  const fetchSearchSuggestions = async (query: string) => {
+    if (!query || query.length < 2) {
+      setSearchSuggestions([]);
+      return;
+    }
+
+    setLoadingSuggestions(true);
+    try {
+      const response = await apiService.get(`/api/properties/autocomplete?q=${encodeURIComponent(query)}&limit=8`) as { suggestions: SearchSuggestion[] };
+      // Add icons and colors based on category
+      const enhancedSuggestions = response.suggestions.map((suggestion: SearchSuggestion) => ({
+        ...suggestion,
+        icon: getCategoryIcon(suggestion.category),
+        color: getCategoryColor(suggestion.category)
+      }));
+      setSearchSuggestions(enhancedSuggestions);
+    } catch (error) {
+      console.error('Error fetching search suggestions:', error);
+      setSearchSuggestions([]);
+    } finally {
+      setLoadingSuggestions(false);
     }
   };
 
-  const clearDates = () => {
-    setSelectedStartDate(null);
-    setSelectedEndDate(null);
-    setIsSelectingEndDate(false);
-    updateSearchField('checkIn', '');
-    updateSearchField('checkOut', '');
+  // Handle location input change with debouncing
+  const handleLocationChange = (value: string) => {
+    updateSearchField('location', value);
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Set new timeout for API call
+    searchTimeoutRef.current = setTimeout(() => {
+      fetchSearchSuggestions(value);
+    }, 300);
   };
 
+  // Get category-specific icons and colors
+  const getCategoryIcon = (category: string): string => {
+    switch (category) {
+      case 'Emirate': return '🇦🇪';
+      case 'City': return '🏙️';
+      case 'Area': return '📍';
+      case 'Property Type': return '🏠';
+      case 'Property': return '🏢';
+      default: return '📍';
+    }
+  };
+
+  const getCategoryColor = (category: string): string => {
+    switch (category) {
+      case 'Emirate': return 'bg-purple-50 text-purple-600';
+      case 'City': return 'bg-blue-50 text-blue-600';
+      case 'Area': return 'bg-green-50 text-green-600';
+      case 'Property Type': return 'bg-orange-50 text-orange-600';
+      case 'Property': return 'bg-pink-50 text-pink-600';
+      default: return 'bg-gray-50 text-gray-600';
+    }
+  };
+
+  // Get popular destinations for initial dropdown
+  const getPopularDestinations = (): SearchSuggestion[] => {
+    if (!popularSearches) return [];
+
+    const destinations: SearchSuggestion[] = [];
+
+    // Add popular locations
+    popularSearches.popularLocations.forEach(location => {
+      destinations.push({
+        type: 'location',
+        value: location.location,
+        label: location.location,
+        category: 'Popular Location',
+        icon: '🔥',
+        color: 'bg-red-50 text-red-600'
+      });
+    });
+
+    // Add trending searches
+    popularSearches.trendingSearches.forEach(search => {
+      destinations.push({
+        type: 'location',
+        value: search,
+        label: search,
+        category: 'Trending',
+        icon: '📈',
+        color: 'bg-yellow-50 text-yellow-600'
+      });
+    });
+
+    return destinations.slice(0, 6);
+  };
+
+  // Format date for display
+  const formatDateForDisplay = (dateString: string): string => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return `${months[date.getMonth()]} ${date.getDate()}`;
+  };
+
+  // Get move-in display text
+  const getMoveInDisplayText = (option: string): string => {
+    const moveInOption = moveInOptions.find(opt => opt.id === option);
+    return moveInOption ? moveInOption.label : 'Select move-in';
+  };
+
+  // Get duration display text
+  const getDurationDisplayText = (option: string): string => {
+    const durationOption = durationOptions.find(opt => opt.id === option);
+    return durationOption ? durationOption.label : 'Select duration';
+  };
+
+  // Calendar state and functions
+  const [currentDate, setCurrentDate] = useState(new Date());
+
+  // Navigate calendar months
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentDate(prev => {
       const newDate = new Date(prev);
@@ -131,145 +271,119 @@ export const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
     });
   };
 
+  // Render calendar days
   const renderCalendar = (date: Date) => {
     const year = date.getFullYear();
     const month = date.getMonth();
-    const daysInMonth = getDaysInMonth(year, month);
-    const firstDay = getFirstDayOfMonth(year, month);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startDate = new Date(firstDay);
+    startDate.setDate(startDate.getDate() - firstDay.getDay());
 
     const days = [];
-    
-    // Add empty cells for days before the first day of the month
-    for (let i = 0; i < firstDay; i++) {
-      days.push(<div key={`empty-${i}`} className="w-10 h-10"></div>);
-    }
+    const today = new Date();
+    const checkInDate = searchData.checkIn ? new Date(searchData.checkIn) : null;
+    const checkOutDate = searchData.checkOut ? new Date(searchData.checkOut) : null;
 
-    // Add days of the month
-    for (let day = 1; day <= daysInMonth; day++) {
-      const currentDay = new Date(year, month, day);
-      const isToday = currentDay.getTime() === today.getTime();
-      const isPast = currentDay < today;
-      const isCheckIn = selectedStartDate && currentDay.getTime() === selectedStartDate.getTime();
-      const isCheckOut = selectedEndDate && currentDay.getTime() === selectedEndDate.getTime();
-      const isInRange = selectedStartDate && selectedEndDate && 
-        currentDay > selectedStartDate && currentDay < selectedEndDate;
-
-      let buttonStyle = 'w-10 h-10 rounded-full text-sm font-medium transition-all duration-200 relative ';
+    for (let i = 0; i < 42; i++) {
+      const currentDay = new Date(startDate);
+      currentDay.setDate(startDate.getDate() + i);
       
-      if (isPast) {
-        buttonStyle += 'text-gray-300 cursor-not-allowed ';
-      } else if (isCheckIn) {
-        buttonStyle += 'bg-gray-900 text-white shadow-lg z-10 ';
-      } else if (isCheckOut) {
-        buttonStyle += 'bg-gray-900 text-white shadow-lg z-10 ';
-      } else if (isInRange) {
-        buttonStyle += 'bg-gray-100 text-gray-900 ';
-      } else if (isToday) {
-        buttonStyle += 'bg-gray-100 text-gray-900 border border-gray-900 ';
-      } else {
-        buttonStyle += 'text-gray-700 hover:bg-gray-100 ';
-      }
+      const isCurrentMonth = currentDay.getMonth() === month;
+      const isToday = currentDay.toDateString() === today.toDateString();
+      const isPast = currentDay < today;
+      const isCheckIn = checkInDate && currentDay.toDateString() === checkInDate.toDateString();
+      const isCheckOut = checkOutDate && currentDay.toDateString() === checkOutDate.toDateString();
+      const isInRange = checkInDate && checkOutDate && currentDay > checkInDate && currentDay < checkOutDate;
 
       days.push(
-        <div key={day} className="relative">
-          {/* Range background */}
-          {isInRange && (
-            <div className="absolute inset-0 bg-gray-100"></div>
-          )}
-          {isCheckIn && selectedEndDate && (
-            <div className="absolute top-0 right-0 bottom-0 w-1/2 bg-gray-100"></div>
-          )}
-          {isCheckOut && selectedStartDate && (
-            <div className="absolute top-0 left-0 bottom-0 w-1/2 bg-gray-100"></div>
-          )}
-          
-          <button
-            onClick={() => !isPast && handleDateSelect(currentDay)}
-            disabled={isPast}
-            className={buttonStyle}
-          >
-            {day}
-          </button>
-        </div>
+        <button
+          key={i}
+          onClick={() => handleDateSelect(currentDay)}
+          disabled={isPast}
+          className={`
+            w-10 h-10 text-sm rounded-full transition-all duration-200 
+            ${!isCurrentMonth ? 'text-gray-300' : ''}
+            ${isPast ? 'text-gray-300 cursor-not-allowed' : 'hover:bg-gray-100'}
+            ${isToday ? 'bg-blue-100 text-blue-600 font-semibold' : ''}
+            ${isCheckIn || isCheckOut ? 'bg-gray-900 text-white font-semibold' : ''}
+            ${isInRange ? 'bg-gray-100' : ''}
+          `}
+        >
+          {currentDay.getDate()}
+        </button>
       );
     }
 
     return days;
   };
 
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      
-      // Don't close dropdowns if clicking inside any search dropdown or search field
-      if (target.closest('.search-dropdown') || target.closest('.search-field')) {
-        return;
+  // Handle date selection
+  const handleDateSelect = (date: Date) => {
+    const dateString = date.toISOString().split('T')[0];
+    
+    if (!searchData.checkIn || (searchData.checkIn && searchData.checkOut)) {
+      // Set check-in date
+      updateSearchField('checkIn', dateString);
+      updateSearchField('checkOut', '');
+    } else if (searchData.checkIn && !searchData.checkOut) {
+      // Set check-out date
+      const checkInDate = new Date(searchData.checkIn);
+      if (date > checkInDate) {
+        updateSearchField('checkOut', dateString);
+      } else {
+        // If selected date is before check-in, reset and set as new check-in
+        updateSearchField('checkIn', dateString);
+        updateSearchField('checkOut', '');
       }
-      
-      closeAllDropdowns();
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [closeAllDropdowns]);
-
-  // Helper functions
-  const formatDateForDisplay = (dateString: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric'
-    });
+    }
   };
 
-  const getMoveInDisplayText = (optionId: string) => {
-    const option = moveInOptions.find(opt => opt.id === optionId);
-    return option ? option.label : 'Select move-in date';
+  // Clear selected dates
+  const clearDates = () => {
+    updateSearchField('checkIn', '');
+    updateSearchField('checkOut', '');
   };
 
-  const getDurationDisplayText = (optionId: string) => {
-    const option = durationOptions.find(opt => opt.id === optionId);
-    return option ? option.label : 'Select duration';
-  };
-
-  const updateGuests = (type: 'adults' | 'children' | 'infants', operation: 'add' | 'subtract') => {
+  // Update guest counts
+  const updateGuests = (type: 'adults' | 'children' | 'infants', action: 'add' | 'subtract') => {
     const currentValue = searchData[type];
-    const newValue = operation === 'add' 
-      ? currentValue + 1 
-      : Math.max(0, currentValue - 1);
-    
-    // Ensure at least 1 adult
-    if (type === 'adults' && newValue === 0) return;
-    
+    let newValue = currentValue;
+
+    if (action === 'add') {
+      newValue = currentValue + 1;
+    } else if (action === 'subtract') {
+      newValue = Math.max(type === 'adults' ? 1 : 0, currentValue - 1);
+    }
+
     updateSearchField(type, newValue);
     
     // Update total guests count
-    const totalGuests = type === 'infants' 
-      ? searchData.adults + searchData.children 
-      : type === 'adults' 
-        ? newValue + searchData.children 
-        : searchData.adults + newValue;
-    
+    const totalGuests = (type === 'adults' ? newValue : searchData.adults) + 
+                       (type === 'children' ? newValue : searchData.children);
     updateSearchField('guests', totalGuests);
   };
 
-  // Compact version for header
-  if (isCompact) {
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Compact search bar for header
+  if (variant === 'compact') {
     return (
       <div className={`relative ${className}`}>
-        <div className="flex items-center bg-white rounded-full border border-gray-300 shadow-sm hover:shadow-md transition-all duration-200 max-w-md mx-auto">
+        <div className="flex items-center bg-white rounded-full border border-gray-300 shadow-sm hover:shadow-md transition-all duration-300">
           <div className="flex-1 flex items-center">
             <input
               type="text"
-              placeholder="Search destinations"
+              placeholder={searchBehavior.placeholder}
               value={searchData.location}
-              onChange={(e) => updateSearchField('location', e.target.value)}
+              onChange={(e) => handleLocationChange(e.target.value)}
               className="flex-1 px-6 py-3 rounded-l-full focus:outline-none text-sm font-medium placeholder-gray-500"
               onFocus={() => updateUIField('showLocationDropdown', true)}
             />
@@ -303,26 +417,34 @@ export const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
         {uiState.showLocationDropdown && (
           <div className="search-dropdown absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-100 z-[9999] max-h-80 overflow-y-auto">
             <div className="p-4">
-              <h4 className="text-sm font-medium text-gray-900 mb-3">Suggested destinations</h4>
+              <h4 className="text-sm font-medium text-gray-900 mb-3">
+                {searchData.location && searchSuggestions.length > 0 ? 'Search suggestions' : 'Popular destinations'}
+              </h4>
               <div className="space-y-1">
-                {uaeDestinations.map((destination) => (
-                  <div
-                    key={destination.id}
-                    className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-xl cursor-pointer transition-colors"
-                    onClick={() => {
-                      updateSearchField('location', destination.name);
-                      updateUIField('showLocationDropdown', false);
-                    }}
-                  >
-                    <div className={`w-10 h-10 rounded-lg ${destination.color} flex items-center justify-center text-lg`}>
-                      {destination.icon}
-                    </div>
-                    <div>
-                      <div className="font-medium text-gray-900">{destination.name}</div>
-                      <div className="text-sm text-gray-500">{destination.subtitle}</div>
-                    </div>
+                {loadingSuggestions ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600"></div>
                   </div>
-                ))}
+                ) : (
+                  (searchData.location && searchSuggestions.length > 0 ? searchSuggestions : getPopularDestinations()).map((destination, index) => (
+                    <div
+                      key={`${destination.type}-${destination.value}-${index}`}
+                      className="flex items-center space-x-3 p-3 hover:bg-gray-50 rounded-xl cursor-pointer transition-colors"
+                      onClick={() => {
+                        updateSearchField('location', destination.value);
+                        updateUIField('showLocationDropdown', false);
+                      }}
+                    >
+                      <div className={`w-10 h-10 rounded-lg ${destination.color} flex items-center justify-center text-lg`}>
+                        {destination.icon}
+                      </div>
+                      <div>
+                        <div className="font-medium text-gray-900">{destination.label}</div>
+                        <div className="text-sm text-gray-500">{destination.sublabel || destination.category}</div>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
@@ -331,38 +453,9 @@ export const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
     );
   }
 
-  // Full version with all features
+  // Expanded search bar for main pages
   return (
     <div className={`relative ${className}`}>
-      {/* Rental Type Toggle */}
-      <div className="flex justify-center mb-6">
-        <div className="bg-white/10 backdrop-blur-sm rounded-full p-1 flex border border-white/20">
-          <button
-            type="button"
-            onClick={() => updateSearchField('rentalType', 'short-term')}
-            className={`px-6 md:px-8 py-3 rounded-full font-medium transition-all text-sm md:text-lg ${
-              searchData.rentalType === 'short-term'
-                ? 'bg-white text-gray-900 shadow-lg'
-                : 'text-white hover:text-gray-200'
-            }`}
-          >
-            Short Term
-          </button>
-          <button
-            type="button"
-            onClick={() => updateSearchField('rentalType', 'long-term')}
-            className={`px-6 md:px-8 py-3 rounded-full font-medium transition-all text-sm md:text-lg ${
-              searchData.rentalType === 'long-term'
-                ? 'bg-white text-gray-900 shadow-lg'
-                : 'text-white hover:text-gray-200'
-            }`}
-          >
-            Long Term
-          </button>
-        </div>
-      </div>
-
-      {/* Main Search Bar */}
       <div className="bg-white rounded-2xl shadow-2xl overflow-visible border border-gray-200">
         <div className="grid grid-cols-1 md:grid-cols-4 overflow-visible">
           {/* Where */}
@@ -378,33 +471,46 @@ export const UnifiedSearchBar: React.FC<UnifiedSearchBarProps> = ({
               }}
             >
               <div className="text-xs font-bold text-gray-700 mb-2 uppercase tracking-wider">Where</div>
-              <div className="text-gray-900 cursor-pointer font-medium">
-                {searchData.location || 'Search destinations'}
-              </div>
+              <input
+                type="text"
+                placeholder={searchBehavior.placeholder}
+                value={searchData.location}
+                onChange={(e) => handleLocationChange(e.target.value)}
+                className="w-full bg-transparent text-gray-900 cursor-pointer font-medium focus:outline-none"
+                onFocus={() => updateUIField('showLocationDropdown', true)}
+              />
             </div>
             {uiState.showLocationDropdown && (
               <div className="search-dropdown absolute top-full left-0 md:left-0 right-0 md:right-auto md:w-96 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 z-[9999] max-h-80 overflow-y-auto">
                 <div className="p-6">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Popular destinations</h4>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-4">
+                    {searchData.location && searchSuggestions.length > 0 ? 'Search suggestions' : 'Popular destinations'}
+                  </h4>
                   <div className="space-y-2">
-                    {uaeDestinations.map((destination) => (
-                      <div
-                        key={destination.id}
-                        className="flex items-center space-x-4 p-4 hover:bg-gray-50 rounded-xl cursor-pointer transition-all duration-200"
-                        onClick={() => {
-                          updateSearchField('location', destination.name);
-                          updateUIField('showLocationDropdown', false);
-                        }}
-                      >
-                        <div className={`w-12 h-12 rounded-xl ${destination.color} flex items-center justify-center text-xl shadow-sm`}>
-                          {destination.icon}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-900">{destination.name}</div>
-                          <div className="text-sm text-gray-500">{destination.subtitle}</div>
-                        </div>
+                    {loadingSuggestions ? (
+                      <div className="flex items-center justify-center py-8">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
                       </div>
-                    ))}
+                    ) : (
+                      (searchData.location && searchSuggestions.length > 0 ? searchSuggestions : getPopularDestinations()).map((destination, index) => (
+                        <div
+                          key={`${destination.type}-${destination.value}-${index}`}
+                          className="flex items-center space-x-4 p-4 hover:bg-gray-50 rounded-xl cursor-pointer transition-all duration-200"
+                          onClick={() => {
+                            updateSearchField('location', destination.value);
+                            updateUIField('showLocationDropdown', false);
+                          }}
+                        >
+                          <div className={`w-12 h-12 rounded-xl ${destination.color} flex items-center justify-center text-xl shadow-sm`}>
+                            {destination.icon}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900">{destination.label}</div>
+                            <div className="text-sm text-gray-500">{destination.sublabel || destination.category}</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               </div>

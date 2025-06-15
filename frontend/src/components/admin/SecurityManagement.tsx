@@ -1,32 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, 
-  Lock, 
+  Lock,
   Eye, 
   AlertTriangle,
   CheckCircle,
-  XCircle,
-  Clock,
-  Users,
-  Globe,
-  Key,
-  FileText,
-  Activity,
   Ban,
-  UserX,
   Settings,
   RefreshCw,
-  Download,
-  Search,
-  Filter,
-  MoreHorizontal,
-  Wifi,
-  Smartphone,
-  Monitor,
-  MapPin,
-  Calendar,
-  TrendingUp,
-  TrendingDown
+  Download
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -90,6 +72,7 @@ const SecurityManagement: React.FC = () => {
   const [accessLogs, setAccessLogs] = useState<AccessLog[]>([]);
   const [securityRules, setSecurityRules] = useState<SecurityRule[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [filters, setFilters] = useState({
     severity: '',
     type: '',
@@ -107,13 +90,18 @@ const SecurityManagement: React.FC = () => {
   const fetchSecurityData = async () => {
     try {
       setLoading(true);
-      const response = await apiService.get('/super-admin/security') as { data: any };
-      const data = response.data;
+      // apiService.get already extracts the data from the response
+      const data = await apiService.get('/super-admin/security') as any;
       
-      setSecurityStats(data.stats);
-      setSecurityEvents(data.events);
-      setAccessLogs(data.accessLogs);
-      setSecurityRules(data.rules);
+      // The data should contain: { stats, events, accessLogs, rules }
+      if (data && data.stats) {
+        setSecurityStats(data.stats);
+        setSecurityEvents(data.events);
+        setAccessLogs(data.accessLogs);
+        setSecurityRules(data.rules);
+      } else {
+        throw new Error('Invalid API response structure');
+      }
     } catch (error) {
       console.error('Error fetching security data:', error);
       // Set realistic sample data
@@ -192,6 +180,42 @@ const SecurityManagement: React.FC = () => {
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSecurityEventAction = async (eventId: string, action: string, notes?: string) => {
+    try {
+      setActionLoading(true);
+      await apiService.post(`/super-admin/security/events/${eventId}/${action}`, { notes });
+      await fetchSecurityData();
+    } catch (error) {
+      console.error(`Error performing security event ${action}:`, error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSecurityRuleAction = async (ruleId: string, action: string) => {
+    try {
+      setActionLoading(true);
+      await apiService.post(`/super-admin/security/rules/${ruleId}/${action}`);
+      await fetchSecurityData();
+    } catch (error) {
+      console.error(`Error performing security rule ${action}:`, error);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const createSecurityRule = async (ruleData: any) => {
+    try {
+      setActionLoading(true);
+      await apiService.post('/super-admin/security/rules', ruleData);
+      await fetchSecurityData();
+    } catch (error) {
+      console.error('Error creating security rule:', error);
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -429,11 +453,33 @@ const SecurityManagement: React.FC = () => {
                   </td>
                   <td className="py-4 px-4">
                     <div className="flex items-center space-x-2">
-                      <Button size="sm" variant="outline">
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                      <Button size="sm" variant="ghost">
-                        <MoreHorizontal className="w-4 h-4" />
+                      {event.status === 'investigating' && (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleSecurityEventAction(event.id, 'resolve', 'Resolved by admin')}
+                          disabled={actionLoading}
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                        </Button>
+                      )}
+                      {event.status === 'active' && (
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleSecurityEventAction(event.id, 'investigate', 'Under investigation')}
+                          disabled={actionLoading}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      )}
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => handleSecurityEventAction(event.id, 'block', 'IP blocked by admin')}
+                        disabled={actionLoading}
+                      >
+                        <Ban className="w-4 h-4" />
                       </Button>
                     </div>
                   </td>
@@ -574,11 +620,21 @@ const SecurityManagement: React.FC = () => {
             </div>
 
             <div className="flex items-center space-x-2 mt-4 pt-4 border-t border-gray-200">
-              <Button size="sm" variant="outline">
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => handleSecurityRuleAction(rule.id, 'edit')}
+                disabled={actionLoading}
+              >
                 <Settings className="w-4 h-4 mr-1" />
                 Edit
               </Button>
-              <Button size="sm" variant="outline">
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => handleSecurityRuleAction(rule.id, rule.status === 'active' ? 'disable' : 'enable')}
+                disabled={actionLoading}
+              >
                 {rule.status === 'active' ? 'Disable' : 'Enable'}
               </Button>
             </div>

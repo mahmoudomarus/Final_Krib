@@ -189,30 +189,7 @@ const Header: React.FC = () => {
               {/* Compact Search Bar - Desktop (show on all pages except homepage) */}
               {!isHomePage && (
                 <div className="hidden lg:flex items-center flex-1 max-w-md mx-8">
-                  <div 
-                    className="flex items-center bg-white rounded-full border border-gray-300 shadow-sm hover:shadow-md transition-all duration-300 cursor-pointer w-full"
-                    onClick={() => setIsSearchExpanded(true)}
-                  >
-                    <div className="flex-1 px-6 py-3">
-                      <div className="flex items-center space-x-4 text-sm">
-                        <span className="font-medium text-gray-900 truncate">
-                          {searchData.location || 'Anywhere'}
-                        </span>
-                        <span className="text-gray-500 border-l border-gray-200 pl-4">
-                          {searchData.checkIn && searchData.checkOut 
-                            ? `${formatDateForDisplay(searchData.checkIn)} - ${formatDateForDisplay(searchData.checkOut)}`
-                            : 'Any week'
-                          }
-                        </span>
-                        <span className="text-gray-500 border-l border-gray-200 pl-4">
-                          {formatGuestsText()}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="bg-primary-600 hover:bg-primary-700 m-2 p-2 rounded-full transition-colors">
-                      <Search className="w-4 h-4 text-white" />
-                    </div>
-                  </div>
+                  <UnifiedSearchBar variant="compact" />
                 </div>
               )}
 

@@ -58,4 +58,7 @@ tasks/
 
 # Documentation with sensitive info
 docs/GOOGLE_OAUTH_SETUP.md
-docs/env-configuration.md 
+docs/env-configuration.md
+
+# Credentials file (contains actual API keys)
+ACTUAL_CREDENTIALS.md 

@@ -1,0 +1,156 @@
+{
+  "name": "krib-backend",
+  "description": "KRIB - UAE Rental Platform Backend API",
+  "repository": "https://github.com/your-username/krib-backend",
+  "logo": "https://kribbucket.sgp1.cdn.digitaloceanspaces.com/assets/krib-logo.png",
+  "keywords": ["node", "express", "typescript", "rental", "uae", "real-estate"],
+  "stack": "heroku-22",
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "addons": [
+    {
+      "plan": "heroku-redis:mini"
+    }
+  ],
+  "env": {
+    "NODE_ENV": {
+      "description": "Node environment",
+      "value": "production"
+    },
+    "PORT": {
+      "description": "Port for the application",
+      "value": "5001"
+    },
+    "CLIENT_URL": {
+      "description": "Frontend URL",
+      "required": true
+    },
+    "SUPABASE_URL": {
+      "description": "Supabase project URL",
+      "required": true
+    },
+    "SUPABASE_ANON_KEY": {
+      "description": "Supabase anonymous key",
+      "required": true
+    },
+    "SUPABASE_SERVICE_ROLE_KEY": {
+      "description": "Supabase service role key",
+      "required": true
+    },
+    "JWT_SECRET": {
+      "description": "JWT secret for authentication",
+      "generator": "secret"
+    },
+    "GOOGLE_CLIENT_ID": {
+      "description": "Google OAuth client ID",
+      "required": true
+    },
+    "GOOGLE_CLIENT_SECRET": {
+      "description": "Google OAuth client secret",
+      "required": true
+    },
+    "GOOGLE_MAPS_API_KEY": {
+      "description": "Google Maps API key",
+      "required": true
+    },
+    "MAPBOX_ACCESS_TOKEN": {
+      "description": "Mapbox access token",
+      "required": true
+    },
+    "SENDGRID_API_KEY": {
+      "description": "SendGrid API key for emails",
+      "required": true
+    },
+    "SENDGRID_FROM_EMAIL": {
+      "description": "SendGrid from email",
+      "value": "noreply@krib.ae"
+    },
+    "SENDGRID_FROM_NAME": {
+      "description": "SendGrid from name",
+      "value": "Krib"
+    },
+    "TWILIO_ACCOUNT_SID": {
+      "description": "Twilio account SID for SMS",
+      "required": true
+    },
+    "TWILIO_AUTH_TOKEN": {
+      "description": "Twilio auth token",
+      "required": true
+    },
+    "TWILIO_PHONE_NUMBER": {
+      "description": "Twilio phone number",
+      "required": true
+    },
+    "MIXPANEL_TOKEN": {
+      "description": "Mixpanel analytics token",
+      "required": true
+    },
+    "STRIPE_SECRET_KEY": {
+      "description": "Stripe secret key",
+      "required": true
+    },
+    "STRIPE_WEBHOOK_SECRET": {
+      "description": "Stripe webhook secret",
+      "required": true
+    },
+    "STRIPE_PUBLISHABLE_KEY": {
+      "description": "Stripe publishable key",
+      "required": true
+    },
+    "DO_SPACES_ENDPOINT": {
+      "description": "Digital Ocean Spaces endpoint",
+      "value": "https://sgp1.digitaloceanspaces.com"
+    },
+    "DO_SPACES_BUCKET": {
+      "description": "Digital Ocean Spaces bucket name",
+      "value": "kribbucket"
+    },
+    "DO_SPACES_REGION": {
+      "description": "Digital Ocean Spaces region",
+      "value": "sgp1"
+    },
+    "DO_SPACES_ACCESS_KEY_ID": {
+      "description": "Digital Ocean Spaces access key ID",
+      "required": true
+    },
+    "DO_SPACES_SECRET_ACCESS_KEY": {
+      "description": "Digital Ocean Spaces secret access key",
+      "required": true
+    },
+    "DO_SPACES_CDN_ENDPOINT": {
+      "description": "Digital Ocean Spaces CDN endpoint",
+      "value": "https://kribbucket.sgp1.cdn.digitaloceanspaces.com"
+    }
+  },
+  "scripts": {
+    "postdeploy": "cd backend && npm run build"
+  },
+  "environments": {
+    "test": {
+      "addons": [
+        "heroku-redis:mini"
+      ],
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "formation": {
+        "web": {
+          "quantity": 1,
+          "size": "basic"
+        }
+      },
+      "scripts": {
+        "test": "cd backend && npm test"
+      }
+    }
+  }
+} 

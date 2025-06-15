@@ -9,11 +9,14 @@ import { MapPin, SlidersHorizontal, Grid3X3, List, Map } from 'lucide-react';
 import { Property, RentalType, PropertyType, DurationType } from '../types';
 import { apiService } from '../services/api';
 import { useSearch } from '../contexts/SearchContext';
+import { searchService, SearchFilters } from '../services/searchService';
+import { useAuth } from '../contexts/AuthContext';
 
 const SearchPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { searchData, setSearchData } = useSearch();
+  const { user } = useAuth();
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +61,7 @@ const SearchPage: React.FC = () => {
     }));
   }, [searchParams, setSearchData]);
 
-  // Load properties from real API
+  // Load properties using intelligent search service
   useEffect(() => {
     const loadProperties = async () => {
       try {
@@ -66,60 +69,29 @@ const SearchPage: React.FC = () => {
         setError(null);
 
         // Get search query from URL
-        const query = searchParams.get('q');
+        const query = searchParams.get('q') || '';
         
-        // Clean and validate search filters - REMOVE null/undefined values
-        const rawFilters = {
-          emirate: searchParams.get('emirate'),
-          city: searchParams.get('city'),
-          area: searchParams.get('area'),
-          propertyType: searchParams.get('propertyType'),
-          rentalType: searchParams.get('rentalType'),
-          minPrice: searchParams.get('minPrice'),
-          maxPrice: searchParams.get('maxPrice'),
-          bedrooms: searchParams.get('bedrooms'),
-          bathrooms: searchParams.get('bathrooms'),
-          maxGuests: searchParams.get('guests'),
-          instantBook: searchParams.get('instantBook'),
-          amenities: searchParams.get('amenities'),
+        // Build search filters from URL parameters
+        const searchFilters: SearchFilters = {
+          emirate: searchParams.get('emirate') || undefined,
+          city: searchParams.get('city') || undefined,
+          area: searchParams.get('area') || undefined,
+          propertyType: searchParams.get('propertyType') || undefined,
+          rentalType: searchParams.get('rentalType') || undefined,
+          minPrice: searchParams.get('minPrice') ? Number(searchParams.get('minPrice')) : undefined,
+          maxPrice: searchParams.get('maxPrice') ? Number(searchParams.get('maxPrice')) : undefined,
+          bedrooms: searchParams.get('bedrooms') ? Number(searchParams.get('bedrooms')) : undefined,
+          bathrooms: searchParams.get('bathrooms') ? Number(searchParams.get('bathrooms')) : undefined,
+          maxGuests: searchParams.get('guests') ? Number(searchParams.get('guests')) : undefined,
+          instantBook: searchParams.get('instantBook') === 'true' ? true : undefined,
+          amenities: searchParams.get('amenities') || undefined,
         };
 
-        // Clean filters - remove null, undefined, empty string values
-        const searchFilters: any = {};
-        
-        Object.entries(rawFilters).forEach(([key, value]) => {
-          if (value && value !== 'null' && value !== 'undefined' && value.trim() !== '') {
-            // Convert numeric strings to numbers
-            if (['minPrice', 'maxPrice', 'bedrooms', 'bathrooms', 'maxGuests'].includes(key)) {
-              const numValue = Number(value);
-              if (!isNaN(numValue) && numValue > 0) {
-                searchFilters[key] = numValue;
-              }
-            } 
-            // Convert boolean strings
-            else if (key === 'instantBook') {
-              searchFilters[key] = value === 'true';
-            }
-            // String values
-            else {
-              searchFilters[key] = value;
-            }
-          }
-        });
+        console.log('Search query:', query);
+        console.log('Search filters:', searchFilters);
 
-        // Add default values for required parameters
-        if (!searchFilters.maxGuests) {
-          searchFilters.maxGuests = 1;
-        }
-
-        console.log('Cleaned search filters:', searchFilters);
-
-        let result: any;
-        if (query && query.trim()) {
-          result = await apiService.searchProperties(query.trim(), searchFilters);
-        } else {
-          result = await apiService.getProperties(searchFilters);
-        }
+        // Use intelligent search service
+        const result = await searchService.searchProperties(query, searchFilters);
 
         // Transform API data to match frontend Property type
         const transformedProperties = result.properties.map((prop: any) => ({
@@ -178,6 +150,15 @@ const SearchPage: React.FC = () => {
         }));
 
         setProperties(transformedProperties);
+
+        // Track search analytics
+        try {
+          await searchService.trackSearch(query, searchFilters, transformedProperties.length);
+        } catch (analyticsError) {
+          console.error('Failed to track search analytics:', analyticsError);
+          // Don't fail the search if analytics fails
+        }
+
       } catch (err) {
         console.error('Error loading properties:', err);
         setError('Failed to load properties. Please try again.');

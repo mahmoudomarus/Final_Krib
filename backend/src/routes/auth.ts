@@ -409,45 +409,49 @@ router.put('/profile', authMiddleware, async (req: any, res: Response) => {
 // POST /api/auth/upload-document - Upload identity documents
 router.post('/upload-document', authMiddleware, async (req: any, res: Response) => {
   try {
-    // Note: In production, you'd want to add proper file upload handling with multer
-    // and upload to cloud storage (S3, Cloudinary, etc.)
+    const { type, fileData, filename, mimetype } = req.body;
     
-    const { type } = req.body; // 'emirates_id' or 'passport'
-    
-    if (!type || !['emirates_id', 'passport'].includes(type)) {
+    if (!type || !['emirates_id', 'passport', 'utility_bill', 'salary_certificate', 'trade_license'].includes(type)) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid document type. Must be emirates_id or passport',
+        error: 'Invalid document type. Must be emirates_id, passport, utility_bill, salary_certificate, or trade_license',
       });
     }
 
-    // Simulate document upload - in production you'd handle file upload here
-    const documentUrl = `https://documents.uae-rental.com/${req.user.id}/${type}_${Date.now()}.pdf`;
-    
-    const updates: any = {
-      updated_at: new Date().toISOString(),
-      kyc_status: 'pending'
-    };
-
-    if (type === 'emirates_id') {
-      updates.emirates_id = documentUrl;
-    } else if (type === 'passport') {
-      updates.passport_number = documentUrl;
+    if (!fileData || !filename || !mimetype) {
+      return res.status(400).json({
+        success: false,
+        error: 'File data, filename, and mimetype are required',
+      });
     }
 
-    // Update user profile with document info
-    const { data: updatedProfile, error } = await supabaseAdmin
-      .from('users')
-      .update(updates)
-      .eq('id', req.user.id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Document upload error:', error);
-      return res.status(500).json({
+    // Convert base64 to buffer
+    let fileBuffer: Buffer;
+    try {
+      const base64Data = fileData.replace(/^data:[^;]+;base64,/, '');
+      fileBuffer = Buffer.from(base64Data, 'base64');
+    } catch (error) {
+      return res.status(400).json({
         success: false,
-        error: 'Failed to save document information',
+        error: 'Invalid file data format',
+      });
+    }
+
+    // Use the file upload service
+    const { fileUploadService } = await import('../services/FileUploadService');
+    
+    const uploadResult = await fileUploadService.uploadDocument({
+      userId: req.user.id,
+      documentType: type,
+      file: fileBuffer,
+      filename,
+      mimetype
+    });
+
+    if (!uploadResult.success) {
+      return res.status(400).json({
+        success: false,
+        error: uploadResult.error || 'Failed to upload document',
       });
     }
 
@@ -456,6 +460,7 @@ router.post('/upload-document', authMiddleware, async (req: any, res: Response) 
       message: 'Document uploaded successfully. Verification is pending.',
       data: {
         document_type: type,
+        document_url: uploadResult.url,
         status: 'pending_verification'
       }
     });

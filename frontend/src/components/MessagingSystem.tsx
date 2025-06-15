@@ -13,7 +13,6 @@ import {
   Smile,
   Check,
   CheckCheck,
-  Clock,
   User,
   Building,
   Home

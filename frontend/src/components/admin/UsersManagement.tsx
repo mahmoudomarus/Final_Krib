@@ -92,12 +92,31 @@ const UsersManagement: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [showSuspendModal, setShowSuspendModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
   }, [pagination.page, filters]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openDropdown) {
+        setOpenDropdown(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [openDropdown]);
 
   const fetchUsers = async () => {
     try {
@@ -112,14 +131,43 @@ const UsersManagement: React.FC = () => {
         sortOrder: filters.sortOrder
       });
 
-      const response = await apiService.get(`/super-admin/users?${params}`) as { data: UsersResponse };
-      const data: UsersResponse = response.data;
+      const response = await apiService.get(`/super-admin/users?${params}`) as any;
       
-      setUsers(data.users);
-      setStats(data.stats);
-      setPagination(data.pagination);
+      // Handle different response structures
+      let usersData;
+      if (response.data && response.data.users) {
+        // Structure: { data: { users: [...], stats: {...}, pagination: {...} } }
+        usersData = response.data;
+      } else if (response.users) {
+        // Structure: { users: [...], stats: {...}, pagination: {...} }
+        usersData = response;
+      } else if (response.data && Array.isArray(response.data)) {
+        // Structure: { data: [...] } (array of users)
+        usersData = {
+          users: response.data,
+          stats: { total: response.data.length, active: 0, suspended: 0, pending: 0, guests: 0, hosts: 0, agents: 0, verified: 0, unverified: 0 },
+          pagination: { page: 1, limit: 20, total: response.data.length, totalPages: 1 }
+        };
+      } else {
+        console.error('Unexpected response structure:', response);
+        usersData = {
+          users: [],
+          stats: { total: 0, active: 0, suspended: 0, pending: 0, guests: 0, hosts: 0, agents: 0, verified: 0, unverified: 0 },
+          pagination: { page: 1, limit: 20, total: 0, totalPages: 0 }
+        };
+      }
+      
+
+      
+      setUsers(usersData.users || []);
+      setStats(usersData.stats || null);
+      setPagination(usersData.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
     } catch (error) {
       console.error('Error fetching users:', error);
+      // Set empty state on error
+      setUsers([]);
+      setStats({ total: 0, active: 0, suspended: 0, pending: 0, guests: 0, hosts: 0, agents: 0, verified: 0, unverified: 0 });
+      setPagination({ page: 1, limit: 20, total: 0, totalPages: 0 });
     } finally {
       setLoading(false);
     }
@@ -132,35 +180,40 @@ const UsersManagement: React.FC = () => {
       let method = 'POST';
       
       switch (action) {
+        case 'verify':
+          endpoint = `/super-admin/users/${userId}/verify`;
+          break;
         case 'suspend':
           endpoint = `/super-admin/users/${userId}/suspend`;
           break;
-        case 'unsuspend':
-          endpoint = `/super-admin/users/${userId}/unsuspend`;
-          break;
-        case 'verify':
-          endpoint = `/super-admin/users/${userId}/verify`;
+        case 'activate':
+          endpoint = `/super-admin/users/${userId}/activate`;
           break;
         case 'delete':
           endpoint = `/super-admin/users/${userId}`;
           method = 'DELETE';
           break;
-        case 'update':
-          endpoint = `/super-admin/users/${userId}`;
-          method = 'PUT';
-          break;
+        case 'edit':
+          // Open edit modal instead of API call
+          setSelectedUser(users.find(u => u.id === userId) || null);
+          setShowEditModal(true);
+          return;
+        case 'view':
+          // Open view modal instead of API call
+          setSelectedUser(users.find(u => u.id === userId) || null);
+          setShowViewModal(true);
+          return;
       }
       
       if (method === 'DELETE') {
         await apiService.delete(endpoint, data);
-      } else if (method === 'PUT') {
-        await apiService.put(endpoint, data);
       } else {
         await apiService.post(endpoint, data);
       }
       
       await fetchUsers(); // Refresh the list
-      setShowSuspendModal(false);
+      setShowStatusModal(false);
+      setShowDeleteModal(false);
       setSelectedUser(null);
     } catch (error) {
       console.error(`Error performing ${action}:`, error);
@@ -465,35 +518,101 @@ const UsersManagement: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
-                        <Button size="sm" variant="ghost">
+                        {/* View and Edit buttons always visible */}
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          title="View Details" 
+                          onClick={() => handleUserAction('view', user.id)}
+                        >
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="ghost">
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          title="Edit User" 
+                          onClick={() => handleUserAction('edit', user.id)}
+                        >
                           <Edit className="w-4 h-4" />
                         </Button>
-                        {user.status === 'active' ? (
+                        
+                        {/* Dropdown Menu */}
+                        <div className="relative">
                           <Button
                             size="sm"
                             variant="ghost"
-                            onClick={() => {
-                              setSelectedUser(user);
-                              setShowSuspendModal(true);
-                            }}
+                            title="More Actions"
+                            onClick={() => setOpenDropdown(openDropdown === user.id ? null : user.id)}
                           >
-                            <Ban className="w-4 h-4 text-red-500" />
+                            <MoreHorizontal className="w-4 h-4" />
                           </Button>
-                        ) : user.status === 'suspended' ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleUserAction('unsuspend', user.id)}
-                          >
-                            <CheckCircle className="w-4 h-4 text-green-500" />
-                          </Button>
-                        ) : null}
-                        <Button size="sm" variant="ghost">
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
+                          
+                          {openDropdown === user.id && (
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                              <div className="py-1">
+                                {/* Verification Actions */}
+                                {user.verification_level !== 'verified' && (
+                                  <button
+                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={() => {
+                                      handleUserAction('verify', user.id);
+                                      setOpenDropdown(null);
+                                    }}
+                                    disabled={actionLoading}
+                                  >
+                                    <UserCheck className="w-4 h-4 mr-2 text-green-600" />
+                                    Verify User
+                                  </button>
+                                )}
+                                
+                                {/* Status Actions */}
+                                {user.status === 'active' ? (
+                                  <button
+                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={() => {
+                                      setSelectedUser(user);
+                                      setShowSuspendModal(true);
+                                      setOpenDropdown(null);
+                                    }}
+                                    disabled={actionLoading}
+                                  >
+                                    <Ban className="w-4 h-4 mr-2 text-yellow-600" />
+                                    Suspend User
+                                  </button>
+                                ) : user.status === 'suspended' ? (
+                                  <button
+                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    onClick={() => {
+                                      handleUserAction('activate', user.id);
+                                      setOpenDropdown(null);
+                                    }}
+                                    disabled={actionLoading}
+                                  >
+                                    <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                                    Activate User
+                                  </button>
+                                ) : null}
+                                
+                                {/* Divider */}
+                                <div className="border-t border-gray-100 my-1"></div>
+                                
+                                {/* Delete Action */}
+                                <button
+                                  className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                                  onClick={() => {
+                                    setSelectedUser(user);
+                                    setShowDeleteModal(true);
+                                    setOpenDropdown(null);
+                                  }}
+                                  disabled={actionLoading}
+                                >
+                                  <AlertTriangle className="w-4 h-4 mr-2 text-red-600" />
+                                  Delete User
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -503,6 +622,57 @@ const UsersManagement: React.FC = () => {
           </table>
         </div>
       </Card>
+
+      {/* User Status Modal */}
+      {showStatusModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Suspend User: {selectedUser.first_name} {selectedUser.last_name}
+            </h3>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const reason = formData.get('reason') as string;
+              handleUserAction('suspend', selectedUser.id, { reason });
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for suspension
+                  </label>
+                  <textarea
+                    name="reason"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Enter reason for suspension..."
+                  />
+                </div>
+              </div>
+              <div className="flex items-center justify-end space-x-3 mt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowStatusModal(false);
+                    setSelectedUser(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {actionLoading ? 'Suspending...' : 'Suspend User'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Suspend User Modal */}
       {showSuspendModal && selectedUser && (
@@ -562,6 +732,69 @@ const UsersManagement: React.FC = () => {
                   disabled={actionLoading}
                 >
                   {actionLoading ? 'Suspending...' : 'Suspend User'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Modal */}
+      {showDeleteModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Delete User: {formatUserName(selectedUser)}
+            </h3>
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex">
+                <AlertTriangle className="w-5 h-5 text-red-400 mr-2 mt-0.5" />
+                <div>
+                  <p className="text-sm text-red-800 font-medium">Warning: This action cannot be undone</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    The user will be permanently marked as deleted and will lose access to their account.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              handleUserAction('delete', selectedUser.id, {
+                reason: formData.get('reason')
+              });
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for deletion *
+                  </label>
+                  <textarea
+                    name="reason"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Enter reason for deleting this user..."
+                  />
+                </div>
+              </div>
+              <div className="mt-6 flex items-center justify-end space-x-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setSelectedUser(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Deleting...' : 'Delete User'}
                 </Button>
               </div>
             </form>

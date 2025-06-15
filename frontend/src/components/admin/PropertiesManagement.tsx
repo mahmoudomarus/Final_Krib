@@ -20,7 +20,8 @@ import {
   AlertTriangle,
   Search,
   Download,
-  Upload
+  Upload,
+  Ban
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -34,7 +35,7 @@ interface Property {
   description: string;
   property_type: 'APARTMENT' | 'VILLA' | 'STUDIO' | 'TOWNHOUSE';
   listing_type: 'SHORT_TERM' | 'LONG_TERM';
-  verification_status: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  verification_status: 'PENDING' | 'VERIFIED' | 'REJECTED' | 'SUSPENDED';
   price_per_night?: number;
   price_per_month?: number;
   bedrooms: number;
@@ -68,6 +69,7 @@ interface PropertyStats {
   total: number;
   active: number;
   pending: number;
+  rejected: number;
   suspended: number;
   shortTerm: number;
   longTerm: number;
@@ -110,19 +112,37 @@ const PropertiesManagement: React.FC = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAddPropertyModal, setShowAddPropertyModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [hosts, setHosts] = useState<Array<{id: string, first_name: string, last_name: string, email: string}>>([]);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
 
   useEffect(() => {
     fetchProperties();
     fetchHosts();
   }, [pagination.page, filters]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (openDropdown) {
+        setOpenDropdown(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [openDropdown]);
+
   const fetchHosts = async () => {
     try {
-      const response = await apiService.get('/super-admin/users?role=host&status=active') as { data: { users: Array<{id: string, first_name: string, last_name: string, email: string}> } };
-      setHosts(response.data.users || []);
+      const response = await apiService.get('/super-admin/users?role=host&status=active') as { users: Array<{id: string, first_name: string, last_name: string, email: string}> };
+      setHosts(response.users || []);
     } catch (error) {
       console.error('Error fetching hosts:', error);
     }
@@ -143,14 +163,43 @@ const PropertiesManagement: React.FC = () => {
         sortOrder: filters.sortOrder
       });
 
-      const response = await apiService.get(`/super-admin/properties?${params}`) as { data: PropertiesResponse };
-      const data: PropertiesResponse = response.data;
+      const response = await apiService.get(`/super-admin/properties?${params}`) as any;
       
-      setProperties(data.properties);
-      setStats(data.stats);
-      setPagination(data.pagination);
+      // Handle different response structures
+      let propertiesData;
+      if (response.data && response.data.properties) {
+        // Structure: { data: { properties: [...], stats: {...}, pagination: {...} } }
+        propertiesData = response.data;
+      } else if (response.properties) {
+        // Structure: { properties: [...], stats: {...}, pagination: {...} }
+        propertiesData = response;
+      } else if (response.data && Array.isArray(response.data)) {
+        // Structure: { data: [...] } (array of properties)
+        propertiesData = {
+          properties: response.data,
+          stats: { total: response.data.length, active: 0, pending: 0, rejected: 0, suspended: 0, shortTerm: 0, longTerm: 0, apartments: 0, villas: 0, studios: 0 },
+          pagination: { page: 1, limit: 20, total: response.data.length, totalPages: 1 }
+        };
+      } else {
+        console.error('Unexpected response structure:', response);
+        propertiesData = {
+          properties: [],
+          stats: { total: 0, active: 0, pending: 0, rejected: 0, suspended: 0, shortTerm: 0, longTerm: 0, apartments: 0, villas: 0, studios: 0 },
+          pagination: { page: 1, limit: 20, total: 0, totalPages: 0 }
+        };
+      }
+      
+
+      
+      setProperties(propertiesData.properties || []);
+      setStats(propertiesData.stats || null);
+      setPagination(propertiesData.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
     } catch (error) {
       console.error('Error fetching properties:', error);
+      // Set empty state on error
+      setProperties([]);
+      setStats({ total: 0, active: 0, pending: 0, rejected: 0, suspended: 0, shortTerm: 0, longTerm: 0, apartments: 0, villas: 0, studios: 0 });
+      setPagination({ page: 1, limit: 20, total: 0, totalPages: 0 });
     } finally {
       setLoading(false);
     }
@@ -164,30 +213,42 @@ const PropertiesManagement: React.FC = () => {
       
       switch (action) {
         case 'approve':
-          endpoint = `/super-admin/properties/${propertyId}/status`;
-          method = 'PUT';
-          data = { status: 'VERIFIED', reason: 'Property approved by admin' };
+          endpoint = `/super-admin/properties/${propertyId}/approve`;
           break;
         case 'reject':
-          endpoint = `/super-admin/properties/${propertyId}/status`;
-          method = 'PUT';
-          data = { status: 'REJECTED', reason: data?.reason || 'Property rejected by admin' };
+          endpoint = `/super-admin/properties/${propertyId}/reject`;
           break;
-        case 'pending':
-          endpoint = `/super-admin/properties/${propertyId}/status`;
-          method = 'PUT';
-          data = { status: 'PENDING', reason: data?.reason || 'Property under review' };
+        case 'suspend':
+          endpoint = `/super-admin/properties/${propertyId}/suspend`;
           break;
+        case 'activate':
+          endpoint = `/super-admin/properties/${propertyId}/activate`;
+          break;
+        case 'delete':
+          endpoint = `/super-admin/properties/${propertyId}`;
+          method = 'DELETE';
+          break;
+        case 'edit':
+          // Open edit modal instead of API call
+          setSelectedProperty(properties.find(p => p.id === propertyId) || null);
+          setShowEditModal(true);
+          return;
+        case 'view':
+          // Open view modal instead of API call
+          setSelectedProperty(properties.find(p => p.id === propertyId) || null);
+          setShowViewModal(true);
+          return;
       }
       
-      if (method === 'PUT') {
-        await apiService.put(endpoint, data);
+      if (method === 'DELETE') {
+        await apiService.delete(endpoint, data);
       } else {
         await apiService.post(endpoint, data);
       }
       
       await fetchProperties(); // Refresh the list
       setShowStatusModal(false);
+      setShowDeleteModal(false);
       setSelectedProperty(null);
     } catch (error) {
       console.error(`Error performing ${action}:`, error);
@@ -538,13 +599,420 @@ const PropertiesManagement: React.FC = () => {
               </div>
             </div>
             
-            <div className="text-center py-12">
-              <Building className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">Properties System Ready</h3>
-              <p className="text-gray-600 mb-6">The property management system is set up and ready for properties to be added.</p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <input
+                        type="checkbox"
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedProperties(properties.map(p => p.id));
+                          } else {
+                            setSelectedProperties([]);
+                          }
+                        }}
+                      />
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Property
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Type
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Owner
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Price
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Location
+                    </th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {properties.map((property) => {
+                    const propertyType = getPropertyTypeBadge(property.property_type);
+                    const listingType = getListingTypeBadge(property.listing_type);
+                    const bookingCount = getBookingCount(property);
+                    const reviewCount = getReviewCount(property);
+                    
+                    return (
+                      <tr key={property.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            checked={selectedProperties.includes(property.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedProperties([...selectedProperties, property.id]);
+                              } else {
+                                setSelectedProperties(selectedProperties.filter(id => id !== property.id));
+                              }
+                            }}
+                          />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0 h-12 w-12">
+                              {property.images && property.images.length > 0 ? (
+                                <img className="h-12 w-12 rounded-lg object-cover" src={property.images[0]} alt="" />
+                              ) : (
+                                <div className="h-12 w-12 rounded-lg bg-gray-300 flex items-center justify-center">
+                                  <Building className="w-6 h-6 text-gray-500" />
+                                </div>
+                              )}
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-gray-900">
+                                {property.title}
+                              </div>
+                              <div className="text-sm text-gray-500">
+                                {property.bedrooms} bed • {property.bathrooms} bath
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="space-y-1">
+                            <Badge variant={propertyType.color as any}>{propertyType.label}</Badge>
+                            <Badge variant={listingType.color as any} className="block">{listingType.label}</Badge>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Badge variant={getStatusBadgeColor(property.verification_status) as any}>
+                            {property.verification_status}
+                          </Badge>
+                          {property.status_reason && (
+                            <div className="text-xs text-gray-500 mt-1">
+                              {property.status_reason}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div>
+                            <div className="font-medium">{formatPropertyOwner(property)}</div>
+                            {property.owner && (
+                              <div className="text-gray-500">{property.owner.email}</div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <div className="font-medium">{formatPrice(property)}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <div>
+                            <div>{property.city}, {property.emirate}</div>
+                            {property.area && <div className="text-xs">{property.area}</div>}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                          <div className="flex items-center justify-end space-x-2">
+                            {/* View and Edit buttons always visible */}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="View Details"
+                              onClick={() => handlePropertyAction('view', property.id)}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              title="Edit Property"
+                              onClick={() => handlePropertyAction('edit', property.id)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            
+                            {/* Dropdown Menu */}
+                            <div className="relative">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="More Actions"
+                                onClick={() => setOpenDropdown(openDropdown === property.id ? null : property.id)}
+                              >
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                              
+                              {openDropdown === property.id && (
+                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-50 border border-gray-200">
+                                  <div className="py-1">
+                                    {/* Status-based Actions */}
+                                    {property.verification_status === 'PENDING' && (
+                                      <>
+                                        <button
+                                          className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                          onClick={() => {
+                                            handlePropertyAction('approve', property.id);
+                                            setOpenDropdown(null);
+                                          }}
+                                          disabled={actionLoading}
+                                        >
+                                          <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                                          Approve Property
+                                        </button>
+                                        <button
+                                          className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                          onClick={() => {
+                                            setSelectedProperty(property);
+                                            setShowStatusModal(true);
+                                            setOpenDropdown(null);
+                                          }}
+                                          disabled={actionLoading}
+                                        >
+                                          <XCircle className="w-4 h-4 mr-2 text-red-600" />
+                                          Reject Property
+                                        </button>
+                                      </>
+                                    )}
+                                    
+                                    {property.verification_status === 'VERIFIED' && (
+                                      <button
+                                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                        onClick={() => {
+                                          handlePropertyAction('suspend', property.id);
+                                          setOpenDropdown(null);
+                                        }}
+                                        disabled={actionLoading}
+                                      >
+                                        <Ban className="w-4 h-4 mr-2 text-yellow-600" />
+                                        Suspend Property
+                                      </button>
+                                    )}
+                                    
+                                    {property.verification_status === 'SUSPENDED' && (
+                                      <button
+                                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                        onClick={() => {
+                                          handlePropertyAction('activate', property.id);
+                                          setOpenDropdown(null);
+                                        }}
+                                        disabled={actionLoading}
+                                      >
+                                        <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                                        Activate Property
+                                      </button>
+                                    )}
+                                    
+                                    {property.verification_status === 'REJECTED' && (
+                                      <button
+                                        className="flex items-center w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                        onClick={() => {
+                                          handlePropertyAction('approve', property.id);
+                                          setOpenDropdown(null);
+                                        }}
+                                        disabled={actionLoading}
+                                      >
+                                        <CheckCircle className="w-4 h-4 mr-2 text-green-600" />
+                                        Approve Property
+                                      </button>
+                                    )}
+                                    
+                                    {/* Divider */}
+                                    <div className="border-t border-gray-100 my-1"></div>
+                                    
+                                    {/* Delete Action */}
+                                    <button
+                                      className="flex items-center w-full px-4 py-2 text-sm text-red-700 hover:bg-red-50"
+                                      onClick={() => {
+                                        setSelectedProperty(property);
+                                        setShowDeleteModal(true);
+                                        setOpenDropdown(null);
+                                      }}
+                                      disabled={actionLoading}
+                                    >
+                                      <AlertTriangle className="w-4 h-4 mr-2 text-red-600" />
+                                      Delete Property
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
+            
+            {/* Pagination */}
+            {pagination.totalPages > 1 && (
+              <div className="px-6 py-4 border-t border-gray-200">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-gray-700">
+                    Showing {((pagination.page - 1) * pagination.limit) + 1} to {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total} properties
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pagination.page <= 1}
+                      onClick={() => setPagination({ ...pagination, page: pagination.page - 1 })}
+                    >
+                      Previous
+                    </Button>
+                    <span className="text-sm text-gray-700">
+                      Page {pagination.page} of {pagination.totalPages}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={pagination.page >= pagination.totalPages}
+                      onClick={() => setPagination({ ...pagination, page: pagination.page + 1 })}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </Card>
         </>
+      )}
+
+      {/* Property Status Modal */}
+      {showStatusModal && selectedProperty && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Update Property Status: {selectedProperty.title}
+            </h3>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              const action = formData.get('action') as string;
+              const reason = formData.get('reason') as string;
+              handlePropertyAction(action, selectedProperty.id, { reason });
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Action
+                  </label>
+                  <select
+                    name="action"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Select Action</option>
+                    <option value="approve">Approve Property</option>
+                    <option value="reject">Reject Property</option>
+                    <option value="pending">Mark as Pending Review</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason/Comments
+                  </label>
+                  <textarea
+                    name="reason"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Enter reason for this action..."
+                  />
+                </div>
+              </div>
+              
+              <div className="mt-6 flex items-center justify-end space-x-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowStatusModal(false);
+                    setSelectedProperty(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Updating...' : 'Update Status'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Property Modal */}
+      {showDeleteModal && selectedProperty && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-medium text-gray-900 mb-4">
+              Delete Property: {selectedProperty.title}
+            </h3>
+            <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex">
+                <AlertTriangle className="w-5 h-5 text-red-400 mr-2 mt-0.5" />
+                <div>
+                  <p className="text-sm text-red-800 font-medium">Warning: This action cannot be undone</p>
+                  <p className="text-sm text-red-700 mt-1">
+                    The property will be permanently marked as deleted and will no longer be available for booking.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.currentTarget);
+              handlePropertyAction('delete', selectedProperty.id, {
+                reason: formData.get('reason')
+              });
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Reason for deletion *
+                  </label>
+                  <textarea
+                    name="reason"
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Enter reason for deleting this property..."
+                  />
+                </div>
+              </div>
+              <div className="mt-6 flex items-center justify-end space-x-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setSelectedProperty(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Deleting...' : 'Delete Property'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Add Property Modal */}

@@ -165,6 +165,22 @@ router.get('/', async (req, res) => {
         }
         const totalCount = count || 0;
         const transformedProperties = properties?.map((property) => {
+            const imageUrls = property.images ? property.images.split(',').map((url) => url.trim()).filter((url) => url) : [];
+            const imageObjects = imageUrls.map((url, index) => ({
+                id: `${property.id}-img-${index}`,
+                url: url,
+                caption: '',
+                order: index
+            }));
+            let status = 'INACTIVE';
+            if (property.is_active) {
+                if (property.verification_status === 'VERIFIED') {
+                    status = 'ACTIVE';
+                }
+                else if (property.verification_status === 'PENDING') {
+                    status = 'PENDING_REVIEW';
+                }
+            }
             return {
                 ...property,
                 host: property.users,
@@ -180,8 +196,23 @@ router.get('/', async (req, res) => {
                 checkOutTime: property.check_out_time,
                 createdAt: property.created_at,
                 updatedAt: property.updated_at,
-                averageRating: null,
+                images: imageObjects,
+                status: status,
+                rating: 0,
+                bookingCount: 0,
                 reviewCount: 0,
+                pricing: {
+                    basePrice: property.base_price || 0,
+                    monthlyRate: property.monthly_price || 0,
+                    priceUnit: property.rental_type === 'LONG_TERM' ? 'MONTH' : 'NIGHT'
+                },
+                location: {
+                    address: property.address,
+                    city: property.city,
+                    emirate: property.emirate,
+                    country: property.country || 'UAE'
+                },
+                maxGuests: property.guests
             };
         }) || [];
         res.json({
@@ -222,7 +253,35 @@ router.get('/search', async (req, res) => {
       `, { count: 'exact' })
             .eq('is_active', true);
         if (q) {
-            query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%,area.ilike.%${q}%,city.ilike.%${q}%,emirate.ilike.%${q}%`);
+            const searchTerm = q.toString().trim();
+            query = query.or(`title.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%,city.ilike.%${searchTerm}%,emirate.ilike.%${searchTerm}%,type.ilike.%${searchTerm}%`);
+        }
+        if (filters.emirate) {
+            query = query.eq('emirate', filters.emirate);
+        }
+        if (filters.city) {
+            query = query.eq('city', filters.city);
+        }
+        if (filters.propertyType) {
+            query = query.eq('type', filters.propertyType);
+        }
+        if (filters.minPrice) {
+            query = query.gte('base_price', parseInt(filters.minPrice));
+        }
+        if (filters.maxPrice) {
+            query = query.lte('base_price', parseInt(filters.maxPrice));
+        }
+        if (filters.bedrooms) {
+            query = query.eq('bedrooms', parseInt(filters.bedrooms));
+        }
+        if (filters.bathrooms) {
+            query = query.gte('bathrooms', parseInt(filters.bathrooms));
+        }
+        if (filters.maxGuests) {
+            query = query.gte('guests', parseInt(filters.maxGuests));
+        }
+        if (filters.instantBook === 'true') {
+            query = query.eq('is_instant_book', true);
         }
         let orderColumn = 'created_at';
         let ascending = false;
@@ -251,6 +310,22 @@ router.get('/search', async (req, res) => {
         }
         const totalCount = count || 0;
         const transformedProperties = properties?.map((property) => {
+            const imageUrls = property.images ? property.images.split(',').map((url) => url.trim()).filter((url) => url) : [];
+            const imageObjects = imageUrls.map((url, index) => ({
+                id: `${property.id}-img-${index}`,
+                url: url,
+                caption: '',
+                order: index
+            }));
+            let status = 'INACTIVE';
+            if (property.is_active) {
+                if (property.verification_status === 'VERIFIED') {
+                    status = 'ACTIVE';
+                }
+                else if (property.verification_status === 'PENDING') {
+                    status = 'PENDING_REVIEW';
+                }
+            }
             return {
                 ...property,
                 host: property.users,
@@ -266,6 +341,23 @@ router.get('/search', async (req, res) => {
                 checkOutTime: property.check_out_time,
                 createdAt: property.created_at,
                 updatedAt: property.updated_at,
+                images: imageObjects,
+                status: status,
+                rating: 0,
+                bookingCount: 0,
+                reviewCount: 0,
+                pricing: {
+                    basePrice: property.base_price || 0,
+                    monthlyRate: property.monthly_price || 0,
+                    priceUnit: property.rental_type === 'LONG_TERM' ? 'MONTH' : 'NIGHT'
+                },
+                location: {
+                    address: property.address,
+                    city: property.city,
+                    emirate: property.emirate,
+                    country: property.country || 'UAE'
+                },
+                maxGuests: property.guests
             };
         }) || [];
         res.json({
@@ -281,9 +373,108 @@ router.get('/search', async (req, res) => {
     }
     catch (error) {
         console.error('Error searching properties:', error);
+        console.error('Full error details:', JSON.stringify(error, null, 2));
         res.status(500).json({
             success: false,
             error: 'Failed to search properties',
+            details: process.env.NODE_ENV === 'development' ? error : undefined,
+        });
+    }
+});
+router.get('/autocomplete', async (req, res) => {
+    try {
+        const { q, limit = 10 } = req.query;
+        if (!q || typeof q !== 'string' || q.trim().length < 2) {
+            return res.json({
+                success: true,
+                data: {
+                    suggestions: []
+                }
+            });
+        }
+        const searchTerm = q.toString().trim();
+        const { data: locationSuggestions } = await supabase_1.supabaseAdmin
+            .from('properties')
+            .select('emirate, city, area')
+            .eq('is_active', true)
+            .or(`emirate.ilike.%${searchTerm}%,city.ilike.%${searchTerm}%,area.ilike.%${searchTerm}%`)
+            .limit(parseInt(limit));
+        const { data: typeSuggestions } = await supabase_1.supabaseAdmin
+            .from('properties')
+            .select('type')
+            .eq('is_active', true)
+            .ilike('type', `%${searchTerm}%`)
+            .limit(5);
+        const { data: titleSuggestions } = await supabase_1.supabaseAdmin
+            .from('properties')
+            .select('id, title, city, emirate')
+            .eq('is_active', true)
+            .ilike('title', `%${searchTerm}%`)
+            .limit(5);
+        const suggestions = [];
+        const uniqueLocations = new Set();
+        locationSuggestions?.forEach(prop => {
+            if (prop.emirate && !uniqueLocations.has(prop.emirate)) {
+                uniqueLocations.add(prop.emirate);
+                suggestions.push({
+                    type: 'location',
+                    value: prop.emirate,
+                    label: prop.emirate,
+                    category: 'Emirate'
+                });
+            }
+            if (prop.city && !uniqueLocations.has(prop.city)) {
+                uniqueLocations.add(prop.city);
+                suggestions.push({
+                    type: 'location',
+                    value: prop.city,
+                    label: `${prop.city}, ${prop.emirate}`,
+                    category: 'City'
+                });
+            }
+            if (prop.area && !uniqueLocations.has(prop.area)) {
+                uniqueLocations.add(prop.area);
+                suggestions.push({
+                    type: 'location',
+                    value: prop.area,
+                    label: `${prop.area}, ${prop.city}`,
+                    category: 'Area'
+                });
+            }
+        });
+        const uniqueTypes = new Set();
+        typeSuggestions?.forEach(prop => {
+            if (prop.type && !uniqueTypes.has(prop.type)) {
+                uniqueTypes.add(prop.type);
+                suggestions.push({
+                    type: 'property_type',
+                    value: prop.type,
+                    label: prop.type,
+                    category: 'Property Type'
+                });
+            }
+        });
+        titleSuggestions?.forEach(prop => {
+            suggestions.push({
+                type: 'property',
+                value: prop.id,
+                label: prop.title,
+                sublabel: `${prop.city}, ${prop.emirate}`,
+                category: 'Property'
+            });
+        });
+        res.json({
+            success: true,
+            data: {
+                suggestions: suggestions.slice(0, parseInt(limit))
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error getting autocomplete suggestions:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get suggestions'
         });
     }
 });
@@ -352,6 +543,94 @@ router.get('/nearby', async (req, res) => {
         });
     }
 });
+router.post('/search-analytics', async (req, res) => {
+    try {
+        const { query, filters, resultCount, timestamp } = req.body;
+        const { error } = await supabase_1.supabaseAdmin
+            .from('analytics_events')
+            .insert({
+            event_type: 'SEARCH',
+            event_data: {
+                query,
+                filters,
+                resultCount,
+                timestamp
+            },
+            user_id: req.user?.id || null,
+            created_at: new Date().toISOString()
+        });
+        if (error) {
+            console.error('Error storing search analytics:', error);
+        }
+        res.json({
+            success: true,
+            message: 'Search analytics recorded'
+        });
+    }
+    catch (error) {
+        console.error('Error tracking search analytics:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to track search analytics'
+        });
+    }
+});
+router.get('/popular-searches', async (req, res) => {
+    try {
+        const { data: popularLocations } = await supabase_1.supabaseAdmin
+            .from('properties')
+            .select('emirate, city, area')
+            .eq('is_active', true);
+        const locationCounts = {};
+        popularLocations?.forEach(prop => {
+            if (prop.emirate)
+                locationCounts[prop.emirate] = (locationCounts[prop.emirate] || 0) + 1;
+            if (prop.city)
+                locationCounts[prop.city] = (locationCounts[prop.city] || 0) + 1;
+            if (prop.area)
+                locationCounts[prop.area] = (locationCounts[prop.area] || 0) + 1;
+        });
+        const sortedLocations = Object.entries(locationCounts)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 10)
+            .map(([location, count]) => ({ location, count }));
+        const { data: propertyTypes } = await supabase_1.supabaseAdmin
+            .from('properties')
+            .select('type')
+            .eq('is_active', true);
+        const typeCounts = {};
+        propertyTypes?.forEach(prop => {
+            if (prop.type) {
+                typeCounts[prop.type] = (typeCounts[prop.type] || 0) + 1;
+            }
+        });
+        const sortedTypes = Object.entries(typeCounts)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 5)
+            .map(([type, count]) => ({ type, count }));
+        res.json({
+            success: true,
+            data: {
+                popularLocations: sortedLocations,
+                popularTypes: sortedTypes,
+                trendingSearches: [
+                    'Dubai Marina',
+                    'Downtown Dubai',
+                    'Business Bay',
+                    'JBR',
+                    'Palm Jumeirah'
+                ]
+            }
+        });
+    }
+    catch (error) {
+        console.error('Error getting popular searches:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get popular searches'
+        });
+    }
+});
 router.get('/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -377,6 +656,22 @@ router.get('/:id', async (req, res) => {
                 error: 'Property not found',
             });
         }
+        const imageUrls = property.images ? property.images.split(',').map((url) => url.trim()).filter((url) => url) : [];
+        const imageObjects = imageUrls.map((url, index) => ({
+            id: `${property.id}-img-${index}`,
+            url: url,
+            caption: '',
+            order: index
+        }));
+        let status = 'INACTIVE';
+        if (property.is_active) {
+            if (property.verification_status === 'VERIFIED') {
+                status = 'ACTIVE';
+            }
+            else if (property.verification_status === 'PENDING') {
+                status = 'PENDING_REVIEW';
+            }
+        }
         const transformedProperty = {
             ...property,
             host: property.users,
@@ -393,6 +688,23 @@ router.get('/:id', async (req, res) => {
             createdAt: property.created_at,
             updatedAt: property.updated_at,
             reviews: [],
+            images: imageObjects,
+            status: status,
+            rating: 0,
+            bookingCount: 0,
+            reviewCount: 0,
+            pricing: {
+                basePrice: property.base_price || 0,
+                monthlyRate: property.monthly_price || 0,
+                priceUnit: property.rental_type === 'LONG_TERM' ? 'MONTH' : 'NIGHT'
+            },
+            location: {
+                address: property.address,
+                city: property.city,
+                emirate: property.emirate,
+                country: property.country || 'UAE'
+            },
+            maxGuests: property.guests
         };
         res.json({
             success: true,

@@ -42,6 +42,9 @@ export declare class NotificationService {
     sendSystemAlert(adminId: string, alertType: string, message: string, data?: any): Promise<any>;
     sendPromotionalOffer(userId: string, title: string, message: string, offerData: any): Promise<any>;
     sendWelcomeBonus(userId: string, bonusAmount: number): Promise<any>;
+    sendViewingRequest(agentId: string, guestName: string, propertyTitle: string, requestedDate: string, requestedTime: string, requestId: string): Promise<any>;
+    sendViewingConfirmed(guestEmail: string, guestName: string, propertyTitle: string, confirmedDate: string, confirmedTime: string): Promise<void>;
+    sendViewingRejected(guestEmail: string, guestName: string, propertyTitle: string): Promise<void>;
     sendBulkNotification(userIds: string[], notificationData: Omit<NotificationData, 'userId'>): Promise<any[]>;
     sendHostReminder(hostId: string, reminderType: string, data: any): Promise<any>;
     sendEmailVerification(email: string, firstName: string, verificationToken: string): Promise<void>;

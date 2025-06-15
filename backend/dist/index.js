@@ -110,8 +110,13 @@ async function startServer() {
             throw new Error('Failed to connect to Supabase database');
         }
         logger_1.logger.info('Connected to Supabase database');
-        await redis_1.default.ping();
-        logger_1.logger.info('Connected to Redis');
+        try {
+            await redis_1.default.ping();
+            logger_1.logger.info('Connected to Redis');
+        }
+        catch (redisError) {
+            logger_1.logger.warn('Redis connection failed - running without Redis cache', redisError);
+        }
         httpServer.listen(PORT, () => {
             logger_1.logger.info(`Server running on port ${PORT}`);
             logger_1.logger.info(`Environment: ${process.env.NODE_ENV}`);
@@ -128,7 +133,13 @@ async function startServer() {
 async function gracefulShutdown() {
     logger_1.logger.info('Shutting down gracefully...');
     try {
-        await redis_1.default.quit();
+        try {
+            await redis_1.default.quit();
+            logger_1.logger.info('Redis connection closed');
+        }
+        catch (error) {
+            logger_1.logger.debug('Redis quit error (non-critical):', error);
+        }
         httpServer.close(() => {
             logger_1.logger.info('Server closed');
             process.exit(0);

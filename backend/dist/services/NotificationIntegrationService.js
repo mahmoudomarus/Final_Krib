@@ -2,23 +2,23 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NotificationIntegrationService = void 0;
 const NotificationService_1 = require("./NotificationService");
-const prisma_1 = require("../lib/prisma");
+const supabase_1 = require("../lib/supabase");
 class NotificationIntegrationService {
     constructor() {
         this.notificationService = new NotificationService_1.NotificationService();
     }
     async sendBookingConfirmation(bookingId) {
         try {
-            await prisma_1.prisma.notification.create({
-                data: {
-                    userId: bookingId,
-                    type: 'BOOKING_CONFIRMATION',
-                    title: 'Booking Confirmed',
-                    message: `Your booking has been confirmed.`,
-                    data: JSON.stringify({ bookingId }),
-                    isRead: false
-                }
-            });
+            const { data: booking, error: bookingError } = await supabase_1.supabase
+                .from('bookings')
+                .select('guest_id, property_id, properties(title)')
+                .eq('id', bookingId)
+                .single();
+            if (bookingError || !booking) {
+                console.error('Booking not found:', bookingError);
+                return;
+            }
+            await this.notificationService.sendBookingConfirmation(booking.guest_id, bookingId);
         }
         catch (error) {
             console.error('Error sending booking confirmation:', error);
@@ -26,21 +26,16 @@ class NotificationIntegrationService {
     }
     async sendPaymentConfirmation(paymentId) {
         try {
-            const payment = await prisma_1.prisma.payment.findUnique({
-                where: { id: paymentId }
-            });
-            if (!payment)
+            const { data: payment, error: paymentError } = await supabase_1.supabase
+                .from('payments')
+                .select('user_id, amount, booking_id')
+                .eq('id', paymentId)
+                .single();
+            if (paymentError || !payment) {
+                console.error('Payment not found:', paymentError);
                 return;
-            await prisma_1.prisma.notification.create({
-                data: {
-                    userId: payment.userId,
-                    type: 'PAYMENT_CONFIRMATION',
-                    title: 'Payment Confirmed',
-                    message: `Your payment has been processed successfully.`,
-                    data: JSON.stringify({ paymentId }),
-                    isRead: false
-                }
-            });
+            }
+            await this.notificationService.sendPaymentSuccess(payment.user_id, paymentId, payment.amount);
         }
         catch (error) {
             console.error('Error sending payment confirmation:', error);
@@ -48,24 +43,16 @@ class NotificationIntegrationService {
     }
     async sendPropertyApproval(propertyId) {
         try {
-            const property = await prisma_1.prisma.property.findUnique({
-                where: { id: propertyId },
-                include: {
-                    host: true
-                }
-            });
-            if (!property)
+            const { data: property, error: propertyError } = await supabase_1.supabase
+                .from('properties')
+                .select('host_id, title')
+                .eq('id', propertyId)
+                .single();
+            if (propertyError || !property) {
+                console.error('Property not found:', propertyError);
                 return;
-            await prisma_1.prisma.notification.create({
-                data: {
-                    userId: property.hostId,
-                    type: 'PROPERTY_APPROVED',
-                    title: 'Property Approved',
-                    message: `Your property "${property.title}" has been approved.`,
-                    data: JSON.stringify({ propertyId }),
-                    isRead: false
-                }
-            });
+            }
+            await this.notificationService.sendPropertyApproved(property.host_id, property.title, propertyId);
         }
         catch (error) {
             console.error('Error sending property approval:', error);

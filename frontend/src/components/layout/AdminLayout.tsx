@@ -58,6 +58,12 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Dashboard'
     const searchParams = new URLSearchParams(location.search);
     const tab = searchParams.get('tab');
     
+    // First check for explicit tab parameter
+    if (tab) {
+      return tab;
+    }
+    
+    // Then check path-based routing
     if (path.includes('/analytics')) return 'analytics';
     if (path.includes('/users')) return 'users';
     if (path.includes('/properties')) return 'properties';
@@ -66,7 +72,9 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children, title = 'Dashboard'
     if (path.includes('/system')) return 'system';
     if (path.includes('/security')) return 'security';
     if (path.includes('/settings')) return 'settings';
-    if (path.includes('/profile') || tab === 'profile') return 'profile';
+    if (path.includes('/profile')) return 'profile';
+    
+    // Default to overview for /admin/dashboard
     return 'overview';
   };
 
