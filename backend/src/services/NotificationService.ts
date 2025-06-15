@@ -40,15 +40,22 @@ export class NotificationService {
     // Initialize Twilio with proper API Key handling
     if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER) {
       try {
-        // Check if using API Key (starts with SK) - this is valid for Twilio
+        // Check if using API Key (starts with SK) - requires different initialization
         if (process.env.TWILIO_ACCOUNT_SID.startsWith('SK')) {
-          // API Key format - this is actually correct for many Twilio setups
-          this.twilioClient = twilio(
-            process.env.TWILIO_ACCOUNT_SID, // This is the API Key SID
-            process.env.TWILIO_AUTH_TOKEN   // This is the API Key Secret
-          );
-          this.smsEnabled = true;
-          console.log('✅ Twilio SMS service initialized with API Key successfully');
+          // API Key format - need to provide the actual Account SID separately
+          if (process.env.TWILIO_MAIN_ACCOUNT_SID) {
+            this.twilioClient = twilio(
+              process.env.TWILIO_ACCOUNT_SID, // This is the API Key SID
+              process.env.TWILIO_AUTH_TOKEN,  // This is the API Key Secret
+              { accountSid: process.env.TWILIO_MAIN_ACCOUNT_SID } // The actual Account SID
+            );
+            this.smsEnabled = true;
+            console.log('✅ Twilio SMS service initialized with API Key successfully');
+          } else {
+            console.warn('API Key detected but TWILIO_MAIN_ACCOUNT_SID not provided. SMS notifications disabled.');
+            console.warn('When using Twilio API Keys, you need both TWILIO_ACCOUNT_SID (API Key) and TWILIO_MAIN_ACCOUNT_SID (Account SID)');
+            this.smsEnabled = false;
+          }
         } else if (process.env.TWILIO_ACCOUNT_SID.startsWith('AC')) {
           // Standard Account SID format
           this.twilioClient = twilio(
@@ -59,6 +66,7 @@ export class NotificationService {
           console.log('✅ Twilio SMS service initialized with Account SID successfully');
         } else {
           console.warn('Invalid Twilio Account SID format. SMS notifications disabled.');
+          console.warn('Account SID should start with AC or SK (for API Keys)');
           this.smsEnabled = false;
         }
       } catch (error) {
@@ -69,6 +77,9 @@ export class NotificationService {
       this.smsEnabled = false;
       console.warn('Twilio credentials incomplete. SMS notifications disabled.');
       console.warn('Required: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER');
+      if (process.env.TWILIO_ACCOUNT_SID?.startsWith('SK')) {
+        console.warn('Note: When using API Keys, also provide TWILIO_MAIN_ACCOUNT_SID');
+      }
     }
   }
 
