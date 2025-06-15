@@ -1,7 +1,9 @@
 export const API_CONFIG = {
-  BASE_URL: process.env.REACT_APP_API_URL || (process.env.NODE_ENV === 'production' 
-    ? 'https://api.uae-rental.com/api' 
-    : 'http://localhost:5001/api'),
+  BASE_URL: process.env.REACT_APP_API_URL 
+    ? `${process.env.REACT_APP_API_URL}/api`
+    : (process.env.NODE_ENV === 'production' 
+      ? 'https://final-krib-backend-db83584596bb.herokuapp.com/api' 
+      : 'http://localhost:5001/api'),
   ENDPOINTS: {
     // Auth
     LOGIN: '/auth/login',
